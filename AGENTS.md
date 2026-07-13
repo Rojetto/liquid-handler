@@ -31,6 +31,8 @@ The simulation should prioritize being understandable, interactive, and visually
 - Use plain TypeScript types and classes/interfaces for robot state, deck state, labware, wells, tips, commands, and simulation time.
 - Let the simulation update from an explicit time step so it can run in real time and remain testable.
 - Treat three.js objects as a view of simulation state, not the source of truth.
+- Use `1` three.js scene unit as `1 cm` for robot, deck, labware, and liquid-handler dimensions.
+- Scale Blender-authored GLB assets by `100` on import when they are exported in Blender's default meter units, so authored meters become scene centimeters.
 - Keep coordinate systems and units documented in code where they are introduced.
 - Avoid premature physical accuracy; represent volumes, positions, and robot motion at the level needed for clear visualization and protocol reasoning.
 
