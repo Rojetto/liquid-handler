@@ -42,10 +42,23 @@ class PipetteHead {
 	y: number;
 	pipettes: Pipette[];
 
+	isMoving: boolean;
+	moveStart: number;
+	fromX: number;
+	toX: number;
+	fromY: number;
+	toY: number;
+
 	constructor(x: number, y: number) {
 		this.x = x;
 		this.y = y;
 		this.pipettes = Array.from({ length: 8 }, () => new Pipette(10));
+		this.isMoving = false;
+		this.moveStart = 0;
+		this.fromX = 0;
+		this.toX = 0;
+		this.fromY = 0;
+		this.toY = 0;
 	}
 }
 
@@ -105,6 +118,7 @@ async function setup(): Promise<void> {
 	setModelShadows(pipetteTipTemplate, true, true);
 
 	clock = new THREE.Timer();
+	clock.connect(document);
 
 	scene = new THREE.Scene();
 	scene.background = new THREE.Color('white');
@@ -158,6 +172,24 @@ async function setup(): Promise<void> {
 }
 
 function update() {
+	const t = clock.getElapsed();
+
+	if (pipetteHead.isMoving) {
+		pipetteHead.x = accLerp(pipetteHead.fromX, pipetteHead.toX, pipetteHead.moveStart, t);
+		pipetteHead.y = accLerp(pipetteHead.fromY, pipetteHead.toY, pipetteHead.moveStart, t);
+
+		if (pipetteHead.x == pipetteHead.toX && pipetteHead.y == pipetteHead.toY) {
+			pipetteHead.isMoving = false;
+		}
+	} else {
+		pipetteHead.moveStart = t;
+		pipetteHead.fromX = pipetteHead.x;
+		pipetteHead.fromY = pipetteHead.y;
+		pipetteHead.toX = Math.floor(Math.random() * 25);
+		pipetteHead.toY = Math.round(Math.random()) * 9;
+		pipetteHead.isMoving = true;
+	}
+
 	// Update world state to scene objects
 	for (const plate of plates) {
 		plate.t3?.position.copy(worldToScene(plate.x, plate.y, 0));
@@ -175,6 +207,72 @@ function update() {
 
 function worldToScene(x: number, y: number, z: number): THREE.Vector3 {
 	return new THREE.Vector3(x, z, -y);
+}
+
+const DEFAULT_MOTION_MAX_V = 20;
+const DEFAULT_MOTION_MAX_ACC = 60;
+
+function accLerp(
+	from: number,
+	to: number,
+	start: number,
+	cur: number,
+	maxV = DEFAULT_MOTION_MAX_V,
+	maxAcc = DEFAULT_MOTION_MAX_ACC
+): number {
+	const distance = to - from;
+	const travelDistance = Math.abs(distance);
+
+	if (travelDistance === 0) {
+		return to;
+	}
+
+	const elapsed = Math.max(0, cur - start);
+
+	if (elapsed === 0) {
+		return from;
+	}
+
+	const direction = Math.sign(distance);
+	const accelTimeToMaxV = maxV / maxAcc;
+	const accelDistanceToMaxV = 0.5 * maxAcc * accelTimeToMaxV * accelTimeToMaxV;
+	const reachesMaxV = accelDistanceToMaxV * 2 <= travelDistance;
+
+	let traveled: number;
+	let totalTime: number;
+
+	if (reachesMaxV) {
+		const cruiseDistance = travelDistance - accelDistanceToMaxV * 2;
+		const cruiseTime = cruiseDistance / maxV;
+		const decelStartTime = accelTimeToMaxV + cruiseTime;
+		totalTime = decelStartTime + accelTimeToMaxV;
+
+		if (elapsed < accelTimeToMaxV) {
+			traveled = 0.5 * maxAcc * elapsed * elapsed;
+		} else if (elapsed < decelStartTime) {
+			traveled = accelDistanceToMaxV + maxV * (elapsed - accelTimeToMaxV);
+		} else if (elapsed < totalTime) {
+			const decelTime = elapsed - decelStartTime;
+			traveled = accelDistanceToMaxV + cruiseDistance + maxV * decelTime - 0.5 * maxAcc * decelTime * decelTime;
+		} else {
+			return to;
+		}
+	} else {
+		const peakV = Math.sqrt(travelDistance * maxAcc);
+		const accelTime = peakV / maxAcc;
+		totalTime = accelTime * 2;
+
+		if (elapsed < accelTime) {
+			traveled = 0.5 * maxAcc * elapsed * elapsed;
+		} else if (elapsed < totalTime) {
+			const decelTime = elapsed - accelTime;
+			traveled = travelDistance * 0.5 + peakV * decelTime - 0.5 * maxAcc * decelTime * decelTime;
+		} else {
+			return to;
+		}
+	}
+
+	return from + direction * Math.min(traveled, travelDistance);
 }
 
 const modelLoader = new GLTFLoader();
@@ -237,7 +335,8 @@ function resize(): void {
 	camera.updateProjectionMatrix();
 }
 
-function animate(): void {
+function animate(timestamp?: number): void {
+	clock.update(timestamp);
 	update();
 	controls.update();
 	renderer.render(scene, camera);
