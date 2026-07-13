@@ -6,7 +6,17 @@
     <title>Liquid Handler Simulation</title>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <section id="simulation-pane" aria-label="Liquid handler simulator"></section>
+      <section id="script-pane" aria-label="Python scripting editor">
+        <div class="editor-toolbar">
+          <div>
+            <h1>Protocol Editor</h1>
+          </div>
+        </div>
+        <div id="script-editor"></div>
+      </section>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

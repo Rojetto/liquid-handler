@@ -1,8 +1,21 @@
 import './style.css';
 
+import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
+import 'monaco-editor/esm/vs/basic-languages/python/python.contribution.js';
+import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+type MonacoEnvironment = {
+	getWorker: () => Worker;
+};
+
+(self as unknown as { MonacoEnvironment: MonacoEnvironment }).MonacoEnvironment = {
+	getWorker() {
+		return new EditorWorker();
+	}
+};
 
 type WellContents = [liquidId: number, volumeUl: number];
 
@@ -64,7 +77,8 @@ class PipetteHead {
 
 let pipetteHead: PipetteHead;
 let plates: Plate[] = [];
-let appElement: HTMLDivElement;
+let simulationElement: HTMLDivElement;
+let scriptEditor: monaco.editor.IStandaloneCodeEditor;
 let clock: THREE.Timer;
 let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
@@ -76,6 +90,8 @@ let pipetteBaseTemplate: THREE.Object3D;
 let pipetteTipTemplate: THREE.Object3D;
 
 async function setup(): Promise<void> {
+	setupEditor();
+
 	// Setup world model
 	pipetteHead = new PipetteHead(0, 0);
 	plates = [];
@@ -88,16 +104,6 @@ async function setup(): Promise<void> {
 			));
 		}
 	}
-
-	// Setup THREE.js
-	const app = document.querySelector<HTMLDivElement>('#app');
-
-	if (!app) {
-		throw new Error('Missing #app element');
-	}
-
-	appElement = app;
-
 	[
 		plateTemplate,
 		reservoirTemplate,
@@ -121,7 +127,7 @@ async function setup(): Promise<void> {
 	clock.connect(document);
 
 	scene = new THREE.Scene();
-	scene.background = new THREE.Color('white');
+	scene.background = new THREE.Color("#2b2b2b");
 
 	camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
 	camera.position.set(0, 30, 0);
@@ -131,7 +137,7 @@ async function setup(): Promise<void> {
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 	renderer.shadowMap.enabled = true;
 	renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-	appElement.appendChild(renderer.domElement);
+	simulationElement.appendChild(renderer.domElement);
 
 	controls = new OrbitControls(camera, renderer.domElement);
 	controls.target.set(0, 0, 0);
@@ -147,7 +153,7 @@ async function setup(): Promise<void> {
 	fillLight.position.copy(worldToScene(-30, 10, 40));
 	scene.add(fillLight);
 
-	const floorGrid = new THREE.GridHelper(400, 400, 0xd0d0d0, 0xe6e6e6);
+	const floorGrid = new THREE.GridHelper(400, 400, new THREE.Color("#8a8a8a").getHex(), new THREE.Color("#424242").getHex());
 	floorGrid.position.copy(worldToScene(0, 0, 0));
 	scene.add(floorGrid);
 
@@ -169,6 +175,39 @@ async function setup(): Promise<void> {
 
 	window.addEventListener('resize', resize);
 	resize();
+}
+
+function setupEditor(): void {
+	const nextSimulationElement = document.querySelector<HTMLDivElement>('#simulation-pane');
+	const editorElement = document.querySelector<HTMLDivElement>('#script-editor');
+
+	if (!nextSimulationElement || !editorElement) {
+		throw new Error('Missing simulator or editor pane');
+	}
+
+	simulationElement = nextSimulationElement;
+	scriptEditor = monaco.editor.create(editorElement, {
+		value: [
+			'from liquid_handler import protocol',
+			'',
+			'protocol.pick_up_tip("tiprack_1", "A1")',
+			'protocol.aspirate("reservoir_1", "A1", volume_ul=50)',
+			'protocol.dispense("plate_1", "A1", volume_ul=50)',
+			'protocol.drop_tip()',
+			''
+		].join('\n'),
+		language: 'python',
+		theme: 'vs-dark',
+		automaticLayout: true,
+		fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+		fontSize: 13,
+		lineHeight: 21,
+		minimap: { enabled: false },
+		scrollBeyondLastLine: false,
+		renderLineHighlight: 'all',
+		tabSize: 4,
+		insertSpaces: true
+	});
 }
 
 function update() {
@@ -327,12 +366,13 @@ function setModelShadows(model: THREE.Object3D, castShadow: boolean, receiveShad
 }
 
 function resize(): void {
-	const width = appElement.clientWidth;
-	const height = appElement.clientHeight;
+	const width = simulationElement.clientWidth;
+	const height = simulationElement.clientHeight;
 
 	renderer.setSize(width, height, false);
 	camera.aspect = width / height;
 	camera.updateProjectionMatrix();
+	scriptEditor.layout();
 }
 
 function animate(timestamp?: number): void {
