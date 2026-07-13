@@ -4,142 +4,248 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-import pipetteBaseModelUrl from '../assets/pipette_base.glb?url';
-import pipetteTipModelUrl from '../assets/pipette_tip.glb?url';
-import plateModelUrl from '../assets/plate.glb?url';
+type WellContents = [liquidId: number, volumeUl: number];
 
-const BLENDER_METERS_TO_SCENE_CENTIMETERS = 100;
-const PLATE_GRID_COLUMNS = 4;
-const PLATE_GRID_ROWS = 2;
-const PLATE_GRID_COLUMN_SPACING_CM = 13;
-const PLATE_GRID_ROW_SPACING_CM = 9;
+class Plate {
+	x: number;
+	y: number;
+	wells: WellContents[][];
+	t3: THREE.Object3D | undefined;
 
-const app = document.querySelector<HTMLDivElement>('#app');
-
-if (!app) {
-  throw new Error('Missing #app element');
+	constructor(x: number, y: number) {
+		this.x = x;
+		this.y = y;
+		this.wells = Array.from({ length: 12 }, () =>
+			Array.from({ length: 8 }, (): WellContents => [0, 0])
+		);
+	}
 }
 
-const appElement = app;
+class Pipette {
+	z: number;
+	liquidId: number;
+	volumeUl: number;
+	tipAttached: boolean;
+	t3Base: THREE.Object3D | undefined;
+	t3Tip: THREE.Object3D | undefined;
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color("white");
-
-const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
-camera.position.set(35, 30, 45);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-appElement.appendChild(renderer.domElement);
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0, 0);
-controls.enableDamping = true;
-
-const plateMaterial = new THREE.MeshStandardMaterial({
-  color: 0xBBBBBB,
-  roughness: 0.45,
-  metalness: 0.05
-});
-
-let plateMeshTemplate: THREE.Object3D | null = null;
-let pipetteTipMesh: THREE.Object3D | null = null;
-let pipetteBaseMesh: THREE.Object3D | null = null;
-
-function prepareModel(model: THREE.Object3D): THREE.Object3D {
-  model.traverse((object) => {
-    if (object instanceof THREE.Mesh) {
-      object.material = plateMaterial;
-    }
-  });
-
-  model.scale.setScalar(BLENDER_METERS_TO_SCENE_CENTIMETERS);
-  return model;
+	constructor(z: number) {
+		this.z = z;
+		this.liquidId = 0;
+		this.volumeUl = 0;
+		this.tipAttached = true;
+	}
 }
 
-function createPlateGrid(plateTemplate: THREE.Object3D): THREE.Group {
-  const plateGrid = new THREE.Group();
-  const xOriginOffset = ((PLATE_GRID_COLUMNS - 1) * PLATE_GRID_COLUMN_SPACING_CM) / 2;
-  const zOriginOffset = ((PLATE_GRID_ROWS - 1) * PLATE_GRID_ROW_SPACING_CM) / 2;
+class PipetteHead {
+	x: number;
+	y: number;
+	pipettes: Pipette[];
 
-  for (let row = 0; row < PLATE_GRID_ROWS; row += 1) {
-    for (let column = 0; column < PLATE_GRID_COLUMNS; column += 1) {
-      const plate = plateTemplate.clone(true);
-      plate.position.set(
-        column * PLATE_GRID_COLUMN_SPACING_CM - xOriginOffset,
-        0,
-        row * PLATE_GRID_ROW_SPACING_CM - zOriginOffset
-      );
-      plateGrid.add(plate);
-    }
-  }
+	constructor(x: number, y: number) {
+		this.x = x;
+		this.y = y;
+		this.pipettes = Array.from({ length: 8 }, () => new Pipette(10));
+	}
+}
 
-  return plateGrid;
+let pipetteHead: PipetteHead;
+let plates: Plate[] = [];
+let appElement: HTMLDivElement;
+let clock: THREE.Timer;
+let scene: THREE.Scene;
+let camera: THREE.PerspectiveCamera;
+let renderer: THREE.WebGLRenderer;
+let controls: OrbitControls;
+let plateTemplate: THREE.Object3D;
+let reservoirTemplate: THREE.Object3D;
+let pipetteBaseTemplate: THREE.Object3D;
+let pipetteTipTemplate: THREE.Object3D;
+
+async function setup(): Promise<void> {
+	// Setup world model
+	pipetteHead = new PipetteHead(0, 0);
+	plates = [];
+
+	for (let row = 0; row < 2; row += 1) {
+		for (let column = 0; column < 2; column += 1) {
+			plates.push(new Plate(
+				column * 13,
+				row * 9
+			));
+		}
+	}
+
+	// Setup THREE.js
+	const app = document.querySelector<HTMLDivElement>('#app');
+
+	if (!app) {
+		throw new Error('Missing #app element');
+	}
+
+	appElement = app;
+
+	[
+		plateTemplate,
+		reservoirTemplate,
+		pipetteBaseTemplate,
+		pipetteTipTemplate
+	] = await Promise.all([
+		loadAsset('plate.glb'),
+		loadAsset('reservoir.glb'),
+		loadAsset('pipette_base.glb'),
+		loadAsset('pipette_tip.glb')
+	]);
+
+	setModelMaterial(plateTemplate, 0xFFFFFF, 0.4, 0);
+	setModelShadows(plateTemplate, true, true);
+	setModelShadows(pipetteBaseTemplate, true, true);
+	setModelShadows(pipetteTipTemplate, true, true);
+
+	clock = new THREE.Timer();
+
+	scene = new THREE.Scene();
+	scene.background = new THREE.Color('white');
+
+	camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
+	camera.position.set(0, 30, 0);
+	camera.lookAt(0, 0, 0);
+
+	renderer = new THREE.WebGLRenderer({ antialias: true });
+	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+	renderer.shadowMap.enabled = true;
+	renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+	appElement.appendChild(renderer.domElement);
+
+	controls = new OrbitControls(camera, renderer.domElement);
+	controls.target.set(0, 0, 0);
+
+	const light = new THREE.DirectionalLight(0xffffff, 3);
+	light.position.copy(worldToScene(13, 9, 50));
+	light.castShadow = true;
+	light.shadow.mapSize.set(2048, 2048);
+	light.shadow.camera.left = -30;
+	light.shadow.camera.right = 30;
+	light.shadow.camera.top = 30;
+	light.shadow.camera.bottom = -30;
+	scene.add(light);
+
+	const floorGrid = new THREE.GridHelper(400, 400, 0xd0d0d0, 0xe6e6e6);
+	floorGrid.position.copy(worldToScene(0, 0, 0));
+	scene.add(floorGrid);
+
+	// Create scene objects for all world objects
+	for (const plate of plates) {
+		const t3 = plateTemplate.clone();
+		plate.t3 = t3;
+		scene.add(t3);
+	}
+
+	for (const pipette of pipetteHead.pipettes) {
+		const t3Base = pipetteBaseTemplate.clone();
+		const t3Tip = pipetteTipTemplate.clone();
+		pipette.t3Base = t3Base;
+		pipette.t3Tip = t3Tip;
+		scene.add(t3Base);
+		scene.add(t3Tip);
+	}
+
+	window.addEventListener('resize', resize);
+	resize();
+}
+
+function update() {
+	// Update world state to scene objects
+	for (const plate of plates) {
+		plate.t3?.position.copy(worldToScene(plate.x, plate.y, 0));
+	}
+
+	for (let channel = 0; channel < pipetteHead.pipettes.length; channel += 1) {
+		const pipette = pipetteHead.pipettes[channel];
+		const y = pipetteHead.y + channel;
+
+		pipette.t3Base?.position.copy(worldToScene(pipetteHead.x, y, pipette.z));
+		pipette.t3Tip?.position.copy(worldToScene(pipetteHead.x, y, pipette.z - 2));
+		pipette.t3Tip && (pipette.t3Tip.visible = pipette.tipAttached);
+	}
+}
+
+function worldToScene(x: number, y: number, z: number): THREE.Vector3 {
+	return new THREE.Vector3(x, z, -y);
 }
 
 const modelLoader = new GLTFLoader();
-modelLoader.load(
-  plateModelUrl,
-  (gltf) => {
-    plateMeshTemplate = prepareModel(gltf.scene);
-    plateMeshTemplate.position.set(0, 0, 0);
-    scene.add(createPlateGrid(plateMeshTemplate));
-  },
-  undefined,
-  (error) => {
-    console.error('Failed to load plate model:', error);
-  }
-);
+const modelAssetUrls = import.meta.glob('../assets/*.glb', {
+	query: '?url',
+	import: 'default',
+	eager: true
+}) as Record<string, string>;
 
-modelLoader.load(
-  pipetteTipModelUrl,
-  (gltf) => {
-    pipetteTipMesh = prepareModel(gltf.scene);
-    pipetteTipMesh.position.set(0.5, 7, 0.5);
-    scene.add(pipetteTipMesh);
-  },
-  undefined,
-  (error) => {
-    console.error('Failed to load pipette tip model:', error);
-  }
-);
+function loadAsset(assetFileName: string): Promise<THREE.Object3D> {
+	const assetUrl = modelAssetUrls[`../assets/${assetFileName}`];
 
-modelLoader.load(
-  pipetteBaseModelUrl,
-  (gltf) => {
-    pipetteBaseMesh = prepareModel(gltf.scene);
-    pipetteBaseMesh.position.set(0.5, 9, 0.5);
-    scene.add(pipetteBaseMesh);
-  },
-  undefined,
-  (error) => {
-    console.error('Failed to load pipette base model:', error);
-  }
-);
+	if (!assetUrl) {
+		return Promise.reject(new Error(`Missing model asset: ${assetFileName}`));
+	}
 
-const diagonalLight = new THREE.DirectionalLight(0xffffff, 3);
-diagonalLight.position.set(30, 50, 40);
-scene.add(diagonalLight);
+	return new Promise((resolve, reject) => {
+		modelLoader.load(
+			assetUrl,
+			(gltf) => {
+				const object = gltf.scene;
+				object.scale.setScalar(100);
+				resolve(object);
+			},
+			undefined,
+			reject
+		);
+	});
+}
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 1);
-scene.add(ambientLight);
+function setModelMaterial(model: THREE.Object3D, color: number, roughness: number, metalness: number): void {
+	const material = new THREE.MeshStandardMaterial({
+		color,
+		roughness,
+		metalness
+	});
 
-function resizeRenderer(): void {
-  const width = appElement.clientWidth;
-  const height = appElement.clientHeight;
+	model.traverse((object) => {
+		if (object instanceof THREE.Mesh) {
+			object.material = material;
+		}
+	});
+}
 
-  renderer.setSize(width, height, false);
-  camera.aspect = width / height;
-  camera.updateProjectionMatrix();
+function setModelShadows(model: THREE.Object3D, castShadow: boolean, receiveShadow: boolean): void {
+	model.traverse((object) => {
+		if (object instanceof THREE.Mesh) {
+			object.castShadow = castShadow;
+			object.receiveShadow = receiveShadow;
+		}
+	});
+}
+
+function resize(): void {
+	const width = appElement.clientWidth;
+	const height = appElement.clientHeight;
+
+	renderer.setSize(width, height, false);
+	camera.aspect = width / height;
+	camera.updateProjectionMatrix();
 }
 
 function animate(): void {
-  controls.update();
-  renderer.render(scene, camera);
-  requestAnimationFrame(animate);
+	update();
+	controls.update();
+	renderer.render(scene, camera);
+	requestAnimationFrame(animate);
 }
 
-window.addEventListener('resize', resizeRenderer);
-
-resizeRenderer();
-animate();
+setup()
+	.then(() => {
+		// Start animation loop
+		animate();
+	})
+	.catch((error: unknown) => {
+		console.error('Failed to set up simulation:', error);
+	});
