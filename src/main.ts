@@ -97,7 +97,9 @@ async function setup(): Promise<void> {
 		loadAsset('pipette_tip.glb')
 	]);
 
-	setModelMaterial(plateTemplate, 0xFFFFFF, 0.4, 0);
+	setModelMaterial(plateTemplate, new THREE.Color("#9196c8").getHex(), 0.4, 0);
+	setModelMaterial(pipetteBaseTemplate, new THREE.Color("#bfbfbf").getHex(), 0.2, 0.8);
+	setModelMaterial(pipetteTipTemplate, new THREE.Color("#e2e2e2").getHex(), 0.4, 0);
 	setModelShadows(plateTemplate, true, true);
 	setModelShadows(pipetteBaseTemplate, true, true);
 	setModelShadows(pipetteTipTemplate, true, true);
@@ -120,15 +122,16 @@ async function setup(): Promise<void> {
 	controls = new OrbitControls(camera, renderer.domElement);
 	controls.target.set(0, 0, 0);
 
-	const light = new THREE.DirectionalLight(0xffffff, 3);
-	light.position.copy(worldToScene(13, 9, 50));
-	light.castShadow = true;
-	light.shadow.mapSize.set(2048, 2048);
-	light.shadow.camera.left = -30;
-	light.shadow.camera.right = 30;
-	light.shadow.camera.top = 30;
-	light.shadow.camera.bottom = -30;
-	scene.add(light);
+	const ambient = new THREE.AmbientLight("white", 0.1);
+	scene.add(ambient);
+
+	const keyLight = new THREE.PointLight(0xffffff, 10000);
+	keyLight.position.copy(worldToScene(60, -20, 40));
+	scene.add(keyLight);
+
+	const fillLight = new THREE.PointLight(0xffffff, 2000);
+	fillLight.position.copy(worldToScene(-30, 10, 40));
+	scene.add(fillLight);
 
 	const floorGrid = new THREE.GridHelper(400, 400, 0xd0d0d0, 0xe6e6e6);
 	floorGrid.position.copy(worldToScene(0, 0, 0));
