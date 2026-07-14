@@ -48,21 +48,36 @@ class Plate {
 	}
 }
 
+type PipetteState = 'neutral' | 'lowering' | 'aspirating' | 'raising';
+
 class Pipette {
 	z: number;
+	fromZ: number;
+	toZ: number;
+	moveStart: number;
+	state: PipetteState;
 	liquidId: number;
 	volumeUl: number;
+	aspirationVol: number;
 	tipAttached: boolean;
 	t3Base: THREE.Object3D | undefined;
 	t3Tip: THREE.Object3D | undefined;
 
 	constructor(z: number) {
 		this.z = z;
+		this.fromZ = z;
+		this.toZ = z;
+		this.moveStart = 0;
+		this.state = 'neutral';
 		this.liquidId = 0;
 		this.volumeUl = 0;
+		this.aspirationVol = 0;
 		this.tipAttached = true;
 	}
 }
+
+const PIPETTE_NEUTRAL_Z = 10;
+const PIPETTE_ASPIRATE_Z = 8;
 
 class PipetteHead {
 	x: number;
@@ -79,7 +94,7 @@ class PipetteHead {
 	constructor(x: number, y: number) {
 		this.x = x;
 		this.y = y;
-		this.pipettes = Array.from({ length: 8 }, () => new Pipette(10));
+		this.pipettes = Array.from({ length: 8 }, () => new Pipette(PIPETTE_NEUTRAL_Z));
 		this.isMoving = false;
 		this.moveStart = 0;
 		this.fromX = 0;
@@ -151,6 +166,28 @@ class RingBuffer {
 
 let pipetteHead: PipetteHead;
 let plates: Plate[] = [];
+
+function getWellAt(x: number, y: number): Well | undefined {
+	for (const plate of plates) {
+		const localX = x - plate.x;
+		const localY = y - plate.y;
+		const col = Math.round(localX);
+		const row = Math.round(localY);
+
+		if (
+			col >= 0 &&
+			col < plate.wells.length &&
+			row >= 0 &&
+			row < plate.wells[col].length &&
+			Math.abs(localX - col) < 0.5 &&
+			Math.abs(localY - row) < 0.5
+		) {
+			return plate.wells[col][row];
+		}
+	}
+
+	return undefined;
+}
 
 let simulationElement: HTMLDivElement;
 let scriptEditor: monaco.editor.IStandaloneCodeEditor;
@@ -238,8 +275,7 @@ async function setup(): Promise<void> {
 	scene.background = new THREE.Color("#2b2b2b");
 
 	camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
-	camera.position.set(0, 30, 0);
-	camera.lookAt(0, 0, 0);
+	camera.position.set(12, 30, -8);
 
 	renderer = new THREE.WebGLRenderer({ antialias: true });
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -248,7 +284,7 @@ async function setup(): Promise<void> {
 	simulationElement.appendChild(renderer.domElement);
 
 	controls = new OrbitControls(camera, renderer.domElement);
-	controls.target.set(0, 0, 0);
+	controls.target.set(12, 0, -8);
 
 	const ambient = new THREE.AmbientLight("white", 0.1);
 	scene.add(ambient);
@@ -496,6 +532,45 @@ function update() {
 		}
 	}
 
+	for (let pipetteIndex = 0; pipetteIndex < pipetteHead.pipettes.length; ++pipetteIndex) {
+		const pipette = pipetteHead.pipettes[pipetteIndex];
+
+		if (pipette.state == "lowering" || pipette.state == "raising") {
+			pipette.z = accLerp(pipette.fromZ, pipette.toZ, pipette.moveStart, t);
+		}
+
+		if (pipette.state == "lowering" && pipette.z == pipette.toZ) {
+			pipette.state = "aspirating";
+		} else if (pipette.state == "aspirating") {
+			const x = pipetteHead.x;
+			const y = pipetteHead.y + pipetteIndex;
+
+			// TODO implement volume limits
+			const well = getWellAt(x, y);
+			if (well) {
+				const movedVolume = pipette.aspirationVol > 0
+					? Math.min(well.volumeUl, pipette.aspirationVol)
+					: - Math.min(pipette.volumeUl, -pipette.aspirationVol)
+				
+				well.volumeUl -= movedVolume;
+				pipette.volumeUl += movedVolume;
+				pipette.aspirationVol = movedVolume; // for success message later
+			}
+
+			pipette.state = "raising";
+			pipette.moveStart = t;
+			pipette.fromZ = pipette.z;
+			pipette.toZ = PIPETTE_NEUTRAL_Z;
+		} else if (pipette.state == "raising" && pipette.z == pipette.toZ) {
+			pipette.state = "neutral";
+			if (pipette.aspirationVol > 0) {
+				writeSerialStr("aspirate " + pipetteIndex + " " + pipette.aspirationVol);
+			} else {
+				writeSerialStr("dispense " + pipetteIndex + " " + (-pipette.aspirationVol));
+			}
+		}
+	}
+
 	// Update world state to scene objects
 	for (const plate of plates) {
 		plate.t3?.position.copy(worldToScene(plate.x, plate.y, 0));
@@ -523,6 +598,8 @@ function update() {
 function processCommand(split: string[]): void {
 	const cmd = split[0];
 
+	const t = clock.getElapsed();
+
 	if (cmd == "move") {
 		if (split.length != 3) {
 			writeSerialStr("command error arguments");
@@ -537,10 +614,13 @@ function processCommand(split: string[]): void {
 			return;
 		}
 
-		const t = clock.getElapsed();
-
 		if (pipetteHead.isMoving) {
 			writeSerialStr("move error move_in_progress");
+			return;
+		}
+
+		if (pipetteHead.pipettes.some((pipette) => pipette.state != "neutral")) {
+			writeSerialStr("move error pipette_in_progress");
 			return;
 		}
 
@@ -550,6 +630,38 @@ function processCommand(split: string[]): void {
 		pipetteHead.fromY = pipetteHead.y;
 		pipetteHead.toX = toX;
 		pipetteHead.toY = toY;
+	} else if (cmd == "aspirate" || cmd == "dispense") {
+		if (split.length != 3) {
+			writeSerialStr("command error arguments");
+			return;
+		}
+
+		const pipetteIndex = Number(split[1]);
+		const volume = Number(split[2]);
+
+		if (
+			!Number.isInteger(pipetteIndex) ||
+			pipetteIndex < 0 ||
+			pipetteIndex >= pipetteHead.pipettes.length ||
+			!Number.isInteger(volume) ||
+			volume < 0 ||
+			volume > 200
+		) {
+			writeSerialStr("command error arguments");
+			return;
+		}
+
+		if (pipetteHead.isMoving) {
+			writeSerialStr(cmd + " error move_in_progress");
+			return;
+		}
+
+		const pipette = pipetteHead.pipettes[pipetteIndex];
+		pipette.state = "lowering";
+		pipette.fromZ = pipette.z;
+		pipette.toZ = PIPETTE_ASPIRATE_Z;
+		pipette.moveStart = t;
+		pipette.aspirationVol = cmd == "aspirate" ? volume : -volume;
 	} else if (cmd == "get") {
 		if (split.length != 2) {
 			writeSerialStr("command error arguments");
