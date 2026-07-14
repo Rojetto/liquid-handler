@@ -2,18 +2,16 @@ import { loadPyodide, type PyodideAPI } from 'pyodide';
 import type { PythonWorkerRequest, PythonWorkerResponse } from './pythonWorkerMessages';
 
 let pyodidePromise: Promise<PyodideAPI> | undefined;
-let activeRequestId = 0;
 let isRunning = false;
 
 function postResponse(response: PythonWorkerResponse): void {
 	self.postMessage(response);
 }
 
-function getPyodide(requestId: number): Promise<PyodideAPI> {
+function getPyodide(): Promise<PyodideAPI> {
 	if (!pyodidePromise) {
 		postResponse({
 			type: 'status',
-			requestId,
 			status: 'loading',
 			message: 'Loading Python...'
 		});
@@ -21,10 +19,10 @@ function getPyodide(requestId: number): Promise<PyodideAPI> {
 		pyodidePromise = loadPyodide({
 			indexURL: new URL(`${import.meta.env.BASE_URL}pyodide/`, self.location.origin).href,
 			stdout: (text) => {
-				postResponse({ type: 'stdout', requestId: activeRequestId, text });
+				postResponse({ type: 'stdout', text });
 			},
 			stderr: (text) => {
-				postResponse({ type: 'stderr', requestId: activeRequestId, text });
+				postResponse({ type: 'stderr', text });
 			}
 		});
 	}
@@ -36,21 +34,18 @@ async function runPython(request: PythonWorkerRequest): Promise<void> {
 	if (isRunning) {
 		postResponse({
 			type: 'error',
-			requestId: request.requestId,
 			error: 'Python is already running.'
 		});
 		return;
 	}
 
 	isRunning = true;
-	activeRequestId = request.requestId;
 
 	try {
-		const pyodide = await getPyodide(request.requestId);
+		const pyodide = await getPyodide();
 
 		postResponse({
 			type: 'status',
-			requestId: request.requestId,
 			status: 'running',
 			message: 'Running...'
 		});
@@ -61,7 +56,6 @@ async function runPython(request: PythonWorkerRequest): Promise<void> {
 			// Print return value as last message
 			postResponse({
 				type: 'stdout',
-				requestId: request.requestId,
 				text: String(result)
 			});
 		}
@@ -70,16 +64,14 @@ async function runPython(request: PythonWorkerRequest): Promise<void> {
 			(result as { destroy: () => void }).destroy();
 		}
 
-		postResponse({ type: 'done', requestId: request.requestId });
+		postResponse({ type: 'done' });
 	} catch (error: unknown) {
 		postResponse({
 			type: 'error',
-			requestId: request.requestId,
 			error: error instanceof Error ? error.message : String(error)
 		});
 	} finally {
 		isRunning = false;
-		activeRequestId = 0;
 	}
 }
 

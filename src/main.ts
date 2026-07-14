@@ -85,8 +85,6 @@ let runScriptButton: HTMLButtonElement;
 let scriptStatusElement: HTMLSpanElement;
 let scriptOutputElement: HTMLPreElement;
 let pythonWorker: Worker;
-let nextPythonRequestId = 0;
-let activePythonRequestId = 0;
 let clock: THREE.Timer;
 let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
@@ -232,15 +230,12 @@ function setupEditor(): void {
 }
 
 function runPythonScript(): void {
-	activePythonRequestId = nextPythonRequestId + 1;
-	nextPythonRequestId = activePythonRequestId;
 	runScriptButton.disabled = true;
 	scriptStatusElement.textContent = 'Starting...';
 	scriptOutputElement.textContent = '';
 
 	const request: PythonWorkerRequest = {
 		type: 'run',
-		requestId: activePythonRequestId,
 		code: scriptEditor.getValue()
 	};
 
@@ -249,10 +244,6 @@ function runPythonScript(): void {
 
 function handlePythonWorkerMessage(event: MessageEvent<PythonWorkerResponse>): void {
 	const response = event.data;
-
-	if (response.requestId !== activePythonRequestId) {
-		return;
-	}
 
 	switch (response.type) {
 		case 'status':
