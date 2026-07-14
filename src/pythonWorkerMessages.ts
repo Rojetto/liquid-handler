@@ -19,4 +19,8 @@ export type PythonWorkerResponse =
 	| {
 		type: 'error';
 		error: string;
+	}
+	| {
+		type: 'py2js';
+		dataBase64: string;
 	};

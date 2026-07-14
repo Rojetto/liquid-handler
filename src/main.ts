@@ -77,14 +77,57 @@ class PipetteHead {
 	}
 }
 
+class SerialBuffer {
+	private bytes: Uint8Array;
+	private readIndex = 0;
+	private writeIndex = 0;
+	private size = 0;
+
+	constructor(capacity: number) {
+		this.bytes = new Uint8Array(capacity);
+	}
+
+	write(data: Uint8Array): number {
+		const writeLength = Math.min(data.length, this.bytes.length - this.writeIndex);
+
+		if (writeLength <= 0) {
+			return 0;
+		}
+
+		this.bytes.set(data.subarray(0, writeLength), this.writeIndex);
+		this.writeIndex += writeLength;
+		this.size = this.writeIndex;
+
+		return writeLength;
+	}
+
+	read(length: number): Uint8Array {
+		const readLength = Math.max(0, Math.min(length, this.available()));
+		const data = this.bytes.slice(this.readIndex, this.readIndex + readLength);
+
+		this.readIndex += readLength;
+
+		return data;
+	}
+
+	available(): number {
+		return this.size - this.readIndex;
+	}
+}
+
 let pipetteHead: PipetteHead;
 let plates: Plate[] = [];
+
 let simulationElement: HTMLDivElement;
 let scriptEditor: monaco.editor.IStandaloneCodeEditor;
 let runScriptButton: HTMLButtonElement;
 let scriptStatusElement: HTMLSpanElement;
 let scriptOutputElement: HTMLPreElement;
+
 let pythonWorker: Worker;
+let serialBuffer: SerialBuffer;
+let commandsIn: string = "";
+
 let clock: THREE.Timer;
 let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
@@ -110,6 +153,11 @@ async function setup(): Promise<void> {
 			));
 		}
 	}
+
+	// Setup serial communication
+	serialBuffer = new SerialBuffer(10*1024); // 10k buffer
+
+	// Setup THREE.js
 	[
 		plateTemplate,
 		reservoirTemplate,
@@ -200,11 +248,13 @@ function setupEditor(): void {
 	scriptOutputElement = nextScriptOutputElement;
 	scriptEditor = monaco.editor.create(editorElement, {
 		value: [
-			'print("Hello from Pyodide")',
+			'import time',
 			'',
-			'for step in range(3):',
-			'    print(f"Protocol step {step + 1}")',
-			''
+			'for x in range(12*2+1):',
+    		'	y = (x % 2) * 9',
+    		'	cmd = f"move {x} {y}\\n"',
+    		'	serial_write(cmd.encode())',
+    		'	time.sleep(1)'
 		].join('\n'),
 		language: 'python',
 		theme: 'vs-dark',
@@ -262,6 +312,18 @@ function handlePythonWorkerMessage(event: MessageEvent<PythonWorkerResponse>): v
 			scriptStatusElement.textContent = 'Error';
 			appendScriptOutput(response.error, 'stderr');
 			break;
+		case 'py2js': {
+			const binaryString = atob(response.dataBase64);
+			const bytes = new Uint8Array(binaryString.length);
+
+			for (let index = 0; index < binaryString.length; index += 1) {
+				bytes[index] = binaryString.charCodeAt(index);
+			}
+
+			serialBuffer.write(bytes);
+			
+			break;
+		}
 	}
 }
 
@@ -274,6 +336,36 @@ function appendScriptOutput(text: string, stream: 'stdout' | 'stderr'): void {
 function update() {
 	const t = clock.getElapsed();
 
+	if (serialBuffer.available() > 0) {
+		const buf = serialBuffer.read(serialBuffer.available());
+		const bufStr = new TextDecoder().decode(buf);
+		commandsIn += bufStr;
+	}
+
+	const commandEnd = commandsIn.indexOf("\n");
+	if (commandEnd >= 0) {
+		const command = commandsIn.substring(0, commandEnd);
+		commandsIn = commandsIn.substring(commandEnd + 1);
+
+		if (command.length > 0) {
+			const split = command.split(" ");
+
+			if (split[0] == "move") {
+				// TODO: error handling
+				const toX = Number(split[1]);
+				const toY = Number(split[2]);
+
+				// TODO: check if pre-conditions are met
+				pipetteHead.isMoving = true;
+				pipetteHead.moveStart = t;
+				pipetteHead.fromX = pipetteHead.x;
+				pipetteHead.fromY = pipetteHead.y;
+				pipetteHead.toX = toX;
+				pipetteHead.toY = toY;
+			}
+		}
+	}
+
 	if (pipetteHead.isMoving) {
 		pipetteHead.x = accLerp(pipetteHead.fromX, pipetteHead.toX, pipetteHead.moveStart, t);
 		pipetteHead.y = accLerp(pipetteHead.fromY, pipetteHead.toY, pipetteHead.moveStart, t);
@@ -281,13 +373,6 @@ function update() {
 		if (pipetteHead.x == pipetteHead.toX && pipetteHead.y == pipetteHead.toY) {
 			pipetteHead.isMoving = false;
 		}
-	} else {
-		pipetteHead.moveStart = t;
-		pipetteHead.fromX = pipetteHead.x;
-		pipetteHead.fromY = pipetteHead.y;
-		pipetteHead.toX = Math.floor(Math.random() * 25);
-		pipetteHead.toY = Math.round(Math.random()) * 9;
-		pipetteHead.isMoving = true;
 	}
 
 	// Update world state to scene objects

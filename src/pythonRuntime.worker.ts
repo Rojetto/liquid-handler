@@ -24,10 +24,32 @@ function getPyodide(): Promise<PyodideAPI> {
 			stderr: (text) => {
 				postResponse({ type: 'stderr', text });
 			}
+		}).then((pyodide) => {
+			installSerialWrite(pyodide);
+			return pyodide;
 		});
 	}
 
 	return pyodidePromise;
+}
+
+function installSerialWrite(pyodide: PyodideAPI): void {
+	pyodide.globals.set('__serial_write_base64', (dataBase64: string) => {
+		postResponse({ type: 'py2js', dataBase64 });
+	});
+
+pyodide.runPython(`
+import base64
+import builtins
+
+def serial_write(data):
+    if not isinstance(data, bytes):
+        raise TypeError("serial_write(data) expects data to be bytes")
+
+    __serial_write_base64(base64.b64encode(data).decode("ascii"))
+
+builtins.serial_write = serial_write
+`);
 }
 
 async function runPython(request: PythonWorkerRequest): Promise<void> {
