@@ -78,41 +78,63 @@ class PipetteHead {
 	}
 }
 
-class SerialBuffer {
+class RingBuffer {
 	private bytes: Uint8Array;
 	private readIndex = 0;
 	private writeIndex = 0;
-	private size = 0;
+	private byteCount = 0;
 
 	constructor(capacity: number) {
 		this.bytes = new Uint8Array(capacity);
 	}
 
 	write(data: Uint8Array): number {
-		const writeLength = Math.min(data.length, this.bytes.length - this.writeIndex);
+		const writeLength = Math.min(data.length, this.bytes.length - this.byteCount);
 
 		if (writeLength <= 0) {
 			return 0;
 		}
 
-		this.bytes.set(data.subarray(0, writeLength), this.writeIndex);
-		this.writeIndex += writeLength;
-		this.size = this.writeIndex;
+		const firstChunkLength = Math.min(writeLength, this.bytes.length - this.writeIndex);
+		const secondChunkLength = writeLength - firstChunkLength;
+
+		this.bytes.set(data.subarray(0, firstChunkLength), this.writeIndex);
+
+		if (secondChunkLength > 0) {
+			this.bytes.set(data.subarray(firstChunkLength, writeLength), 0);
+		}
+
+		this.writeIndex = (this.writeIndex + writeLength) % this.bytes.length;
+		this.byteCount += writeLength;
 
 		return writeLength;
 	}
 
 	read(length: number): Uint8Array {
 		const readLength = Math.max(0, Math.min(length, this.available()));
-		const data = this.bytes.slice(this.readIndex, this.readIndex + readLength);
+		const data = new Uint8Array(readLength);
 
-		this.readIndex += readLength;
+		if (readLength <= 0) {
+			return data;
+		}
+
+		const firstChunkLength = Math.min(readLength, this.bytes.length - this.readIndex);
+		const secondChunkLength = readLength - firstChunkLength;
+
+		data.set(this.bytes.subarray(this.readIndex, this.readIndex + firstChunkLength), 0);
+
+		if (secondChunkLength > 0) {
+			data.set(this.bytes.subarray(0, secondChunkLength), firstChunkLength);
+		}
+
+		this.readIndex = (this.readIndex + readLength) % this.bytes.length;
+		this.byteCount -= readLength;
 
 		return data;
 	}
 
 	available(): number {
-		return this.size - this.readIndex;
+		return this.byteCount;
 	}
 }
 
@@ -126,7 +148,7 @@ let scriptStatusElement: HTMLSpanElement;
 let scriptOutputElement: HTMLPreElement;
 
 let pythonWorker: Worker;
-let py2JsBuffer: SerialBuffer;
+let py2JsBuffer: RingBuffer;
 let js2PyPipe: SharedSerialPipe | undefined;
 let isPythonWorkerReady = false;
 let commandsIn: string = "";
@@ -158,7 +180,7 @@ async function setup(): Promise<void> {
 	}
 
 	// Setup serial communication
-	py2JsBuffer = new SerialBuffer(10*1024); // 10k buffer
+	py2JsBuffer = new RingBuffer(10*1024); // 10k buffer
 
 	// Setup THREE.js
 	[
