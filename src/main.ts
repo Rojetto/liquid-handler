@@ -248,12 +248,16 @@ function setupEditor(): void {
 	scriptOutputElement = nextScriptOutputElement;
 	scriptEditor = monaco.editor.create(editorElement, {
 		value: [
+			'import io',
 			'import time',
+			'',
+			'serial = io.BufferedWriter(SerialStream())',
 			'',
 			'for x in range(12*2+1):',
     		'	y = (x % 2) * 9',
     		'	cmd = f"move {x} {y}\\n"',
-    		'	serial_write(cmd.encode())',
+    		'	serial.write(cmd.encode())',
+			'	serial.flush()',
     		'	time.sleep(1)'
 		].join('\n'),
 		language: 'python',

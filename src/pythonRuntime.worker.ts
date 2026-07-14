@@ -25,7 +25,7 @@ function getPyodide(): Promise<PyodideAPI> {
 				postResponse({ type: 'stderr', text });
 			}
 		}).then((pyodide) => {
-			installSerialWrite(pyodide);
+			installSerialInterface(pyodide);
 			return pyodide;
 		});
 	}
@@ -33,22 +33,33 @@ function getPyodide(): Promise<PyodideAPI> {
 	return pyodidePromise;
 }
 
-function installSerialWrite(pyodide: PyodideAPI): void {
-	pyodide.globals.set('__serial_write_base64', (dataBase64: string) => {
+function installSerialInterface(pyodide: PyodideAPI): void {
+	pyodide.globals.set('_serial_write_base64', (dataBase64: string) => {
 		postResponse({ type: 'py2js', dataBase64 });
 	});
 
 pyodide.runPython(`
 import base64
 import builtins
+import io
 
-def serial_write(data):
-    if not isinstance(data, bytes):
-        raise TypeError("serial_write(data) expects data to be bytes")
+class SerialStream(io.RawIOBase):
+    def writable(self):
+        return True
 
-    __serial_write_base64(base64.b64encode(data).decode("ascii"))
+    def write(self, data):
+        if self.closed:
+            raise ValueError("I/O operation on closed file.")
 
-builtins.serial_write = serial_write
+        try:
+            data_bytes = bytes(data)
+        except TypeError as error:
+            raise TypeError("SerialStream.write(data) expects a bytes-like object") from error
+
+        _serial_write_base64(base64.b64encode(data_bytes).decode("ascii"))
+        return len(data_bytes)
+
+builtins.SerialStream = SerialStream
 `);
 }
 
