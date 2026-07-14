@@ -1,8 +1,10 @@
-import { loadPyodide, type PyodideAPI } from 'pyodide';
+import type { PyodideAPI } from 'pyodide';
 import type { PythonWorkerRequest, PythonWorkerResponse } from './pythonWorkerMessages';
+import { SharedSerialPipe } from './sharedSerialPipe';
 
 let pyodidePromise: Promise<PyodideAPI> | undefined;
 let isRunning = false;
+let js2PyPipe: SharedSerialPipe | undefined;
 
 function postResponse(response: PythonWorkerResponse): void {
 	self.postMessage(response);
@@ -16,7 +18,7 @@ function getPyodide(): Promise<PyodideAPI> {
 			message: 'Loading Python...'
 		});
 
-		pyodidePromise = loadPyodide({
+		pyodidePromise = import('pyodide').then(({ loadPyodide }) => loadPyodide({
 			indexURL: new URL(`${import.meta.env.BASE_URL}pyodide/`, self.location.origin).href,
 			stdout: (text) => {
 				postResponse({ type: 'stdout', text });
@@ -24,7 +26,7 @@ function getPyodide(): Promise<PyodideAPI> {
 			stderr: (text) => {
 				postResponse({ type: 'stderr', text });
 			}
-		}).then((pyodide) => {
+		})).then((pyodide) => {
 			installSerialInterface(pyodide);
 			return pyodide;
 		});
@@ -37,6 +39,19 @@ function installSerialInterface(pyodide: PyodideAPI): void {
 	pyodide.globals.set('_serial_write_base64', (dataBase64: string) => {
 		postResponse({ type: 'py2js', dataBase64 });
 	});
+	pyodide.globals.set('_serial_read_blocking_base64', (maxLength: number) => {
+		if (!js2PyPipe) {
+			throw new Error('Serial input pipe is not configured.');
+		}
+
+		const data = js2PyPipe.readBlocking(maxLength);
+
+		if (data === null) {
+			return '';
+		}
+
+		return bytesToBase64(data);
+	});
 
 pyodide.runPython(`
 import base64
@@ -44,8 +59,26 @@ import builtins
 import io
 
 class SerialStream(io.RawIOBase):
+    def readable(self):
+        return True
+
     def writable(self):
         return True
+
+    def readinto(self, buffer):
+        if self.closed:
+            raise ValueError("I/O operation on closed file.")
+
+        if len(buffer) == 0:
+            return 0
+
+        data = base64.b64decode(_serial_read_blocking_base64(len(buffer)))
+
+        if len(data) == 0:
+            return 0
+
+        buffer[:len(data)] = data
+        return len(data)
 
     def write(self, data):
         if self.closed:
@@ -60,10 +93,22 @@ class SerialStream(io.RawIOBase):
         return len(data_bytes)
 
 builtins.SerialStream = SerialStream
-`);
+	`);
 }
 
-async function runPython(request: PythonWorkerRequest): Promise<void> {
+function bytesToBase64(bytes: Uint8Array): string {
+	let binary = '';
+	const chunkLength = 0x8000;
+
+	for (let offset = 0; offset < bytes.length; offset += chunkLength) {
+		const chunk = bytes.subarray(offset, offset + chunkLength);
+		binary += String.fromCharCode(...chunk);
+	}
+
+	return btoa(binary);
+}
+
+async function runPython(request: Extract<PythonWorkerRequest, { type: 'run' }>): Promise<void> {
 	if (isRunning) {
 		postResponse({
 			type: 'error',
@@ -109,7 +154,17 @@ async function runPython(request: PythonWorkerRequest): Promise<void> {
 }
 
 self.onmessage = event => {
-	if (event.data.type === 'run') {
-		void runPython(event.data);
+	const request = event.data as PythonWorkerRequest;
+
+	if (request.type === 'configureSerialInput') {
+		js2PyPipe = SharedSerialPipe.wrap(request.sharedBuffer);
+	} else if (request.type === 'run') {
+		void runPython(request);
 	}
 };
+
+postResponse({
+	type: 'status',
+	status: 'ready',
+	message: 'Python worker ready'
+});

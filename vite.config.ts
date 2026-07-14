@@ -11,6 +11,10 @@ const pyodideAssetFiles = [
   'pyodide-lock.json',
   'python_stdlib.zip'
 ];
+const crossOriginIsolationHeaders = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Embedder-Policy': 'require-corp'
+};
 
 export default defineConfig({
   optimizeDeps: {
@@ -28,11 +32,13 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
-    strictPort: true
+    strictPort: true,
+    headers: crossOriginIsolationHeaders
   },
   preview: {
     host: '0.0.0.0',
     port: 4173,
-    strictPort: true
+    strictPort: true,
+    headers: crossOriginIsolationHeaders
   }
 });

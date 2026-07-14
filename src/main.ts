@@ -8,6 +8,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { PythonWorkerRequest, PythonWorkerResponse } from './pythonWorkerMessages';
 import PythonRuntimeWorker from './pythonRuntime.worker?worker';
+import { SharedSerialPipe } from './sharedSerialPipe';
 
 type MonacoEnvironment = {
 	getWorker: () => Worker;
@@ -125,7 +126,9 @@ let scriptStatusElement: HTMLSpanElement;
 let scriptOutputElement: HTMLPreElement;
 
 let pythonWorker: Worker;
-let serialBuffer: SerialBuffer;
+let py2JsBuffer: SerialBuffer;
+let js2PyPipe: SharedSerialPipe | undefined;
+let isPythonWorkerReady = false;
 let commandsIn: string = "";
 
 let clock: THREE.Timer;
@@ -155,7 +158,7 @@ async function setup(): Promise<void> {
 	}
 
 	// Setup serial communication
-	serialBuffer = new SerialBuffer(10*1024); // 10k buffer
+	py2JsBuffer = new SerialBuffer(10*1024); // 10k buffer
 
 	// Setup THREE.js
 	[
@@ -274,12 +277,20 @@ function setupEditor(): void {
 	});
 
 	pythonWorker = new PythonRuntimeWorker();
+	runScriptButton.disabled = true;
+	scriptStatusElement.textContent = 'Starting Python worker...';
 	pythonWorker.addEventListener('message', handlePythonWorkerMessage);
-	pythonWorker.addEventListener('error', (event) => {
-		runScriptButton.disabled = false;
-		scriptStatusElement.textContent = 'Worker error';
-		appendScriptOutput(`Worker error: ${event.message}`, 'stderr');
-	});
+	pythonWorker.addEventListener('error', handlePythonWorkerError);
+	pythonWorker.addEventListener('messageerror', handlePythonWorkerMessageError);
+
+	try {
+		js2PyPipe = SharedSerialPipe.create(10 * 1024);
+	} catch (error: unknown) {
+		runScriptButton.disabled = true;
+		scriptStatusElement.textContent = 'Serial setup error';
+		appendScriptOutput(error instanceof Error ? error.message : String(error), 'stderr');
+	}
+
 	runScriptButton.addEventListener('click', runPythonScript);
 }
 
@@ -301,6 +312,12 @@ function handlePythonWorkerMessage(event: MessageEvent<PythonWorkerResponse>): v
 
 	switch (response.type) {
 		case 'status':
+			if (response.status === 'ready') {
+				isPythonWorkerReady = true;
+				configurePythonSerialInput();
+				runScriptButton.disabled = false;
+			}
+
 			scriptStatusElement.textContent = response.message;
 			break;
 		case 'stdout':
@@ -324,11 +341,57 @@ function handlePythonWorkerMessage(event: MessageEvent<PythonWorkerResponse>): v
 				bytes[index] = binaryString.charCodeAt(index);
 			}
 
-			serialBuffer.write(bytes);
+			py2JsBuffer.write(bytes);
 			
 			break;
 		}
 	}
+}
+
+function configurePythonSerialInput(): void {
+	if (!js2PyPipe || !isPythonWorkerReady) {
+		return;
+	}
+
+	try {
+		pythonWorker.postMessage({
+			type: 'configureSerialInput',
+			sharedBuffer: js2PyPipe.sharedBuffer
+		} satisfies PythonWorkerRequest);
+	} catch (error: unknown) {
+		runScriptButton.disabled = true;
+		scriptStatusElement.textContent = 'Serial setup error';
+		appendScriptOutput(error instanceof Error ? error.message : String(error), 'stderr');
+	}
+}
+
+function handlePythonWorkerError(event: ErrorEvent): void {
+	runScriptButton.disabled = false;
+	scriptStatusElement.textContent = 'Worker error';
+	appendScriptOutput(`Worker error: ${formatWorkerError(event)}`, 'stderr');
+}
+
+function handlePythonWorkerMessageError(): void {
+	runScriptButton.disabled = false;
+	scriptStatusElement.textContent = 'Worker message error';
+	appendScriptOutput('Worker message error: failed to deserialize a worker message.', 'stderr');
+}
+
+function formatWorkerError(event: ErrorEvent): string {
+	if (event.message) {
+		return event.message;
+	}
+
+	if (event.error instanceof Error && event.error.message) {
+		return event.error.message;
+	}
+
+	if (event.filename) {
+		const location = event.lineno ? `${event.filename}:${event.lineno}:${event.colno}` : event.filename;
+		return `Python worker failed at ${location}.`;
+	}
+
+	return 'Python worker failed to start. Check the browser console for the original error.';
 }
 
 function appendScriptOutput(text: string, stream: 'stdout' | 'stderr'): void {
@@ -337,11 +400,19 @@ function appendScriptOutput(text: string, stream: 'stdout' | 'stderr'): void {
 	scriptOutputElement.scrollTop = scriptOutputElement.scrollHeight;
 }
 
+function writeSerialInputToPython(data: Uint8Array): number {
+	if (!js2PyPipe) {
+		return 0;
+	}
+
+	return js2PyPipe.write(data);
+}
+
 function update() {
 	const t = clock.getElapsed();
 
-	if (serialBuffer.available() > 0) {
-		const buf = serialBuffer.read(serialBuffer.available());
+	if (py2JsBuffer.available() > 0) {
+		const buf = py2JsBuffer.read(py2JsBuffer.available());
 		const bufStr = new TextDecoder().decode(buf);
 		commandsIn += bufStr;
 	}

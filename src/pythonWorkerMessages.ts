@@ -1,12 +1,17 @@
-export type PythonWorkerRequest = {
-	type: 'run';
-	code: string;
-};
+export type PythonWorkerRequest =
+	| {
+		type: 'configureSerialInput';
+		sharedBuffer: SharedArrayBuffer;
+	}
+	| {
+		type: 'run';
+		code: string;
+	};
 
 export type PythonWorkerResponse =
 	| {
 		type: 'status';
-		status: 'loading' | 'running';
+		status: 'ready' | 'loading' | 'running';
 		message: string;
 	}
 	| {
