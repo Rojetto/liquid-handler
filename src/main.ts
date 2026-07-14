@@ -422,46 +422,27 @@ function appendScriptOutput(text: string, stream: 'stdout' | 'stderr'): void {
 	scriptOutputElement.scrollTop = scriptOutputElement.scrollHeight;
 }
 
-function writeSerialInputToPython(data: Uint8Array): number {
-	if (!js2PyPipe) {
-		return 0;
-	}
-
-	return js2PyPipe.write(data);
-}
-
 function update() {
-	const t = clock.getElapsed();
-
+	// Process commands
 	if (py2JsBuffer.available() > 0) {
-		const buf = py2JsBuffer.read(py2JsBuffer.available());
-		const bufStr = new TextDecoder().decode(buf);
-		commandsIn += bufStr;
+		commandsIn += readSerialStr();
 	}
 
-	const commandEnd = commandsIn.indexOf("\n");
-	if (commandEnd >= 0) {
+	let commandEnd = commandsIn.indexOf("\n");
+	while (commandEnd >= 0) {
 		const command = commandsIn.substring(0, commandEnd);
 		commandsIn = commandsIn.substring(commandEnd + 1);
 
 		if (command.length > 0) {
 			const split = command.split(" ");
-
-			if (split[0] == "move") {
-				// TODO: error handling
-				const toX = Number(split[1]);
-				const toY = Number(split[2]);
-
-				// TODO: check if pre-conditions are met
-				pipetteHead.isMoving = true;
-				pipetteHead.moveStart = t;
-				pipetteHead.fromX = pipetteHead.x;
-				pipetteHead.fromY = pipetteHead.y;
-				pipetteHead.toX = toX;
-				pipetteHead.toY = toY;
-			}
+			processCommand(split);
 		}
+
+		commandEnd = commandsIn.indexOf("\n");
 	}
+
+	// Do movement
+	const t = clock.getElapsed();
 
 	if (pipetteHead.isMoving) {
 		pipetteHead.x = accLerp(pipetteHead.fromX, pipetteHead.toX, pipetteHead.moveStart, t);
@@ -469,6 +450,7 @@ function update() {
 
 		if (pipetteHead.x == pipetteHead.toX && pipetteHead.y == pipetteHead.toY) {
 			pipetteHead.isMoving = false;
+			writeSerialStr("move complete");
 		}
 	}
 
@@ -485,6 +467,60 @@ function update() {
 		pipette.t3Tip?.position.copy(worldToScene(pipetteHead.x, y, pipette.z - 2));
 		pipette.t3Tip && (pipette.t3Tip.visible = pipette.tipAttached);
 	}
+}
+
+function processCommand(split: string[]): void {
+	const cmd = split[0];
+
+	if (cmd == "move") {
+		if (split.length != 3) {
+			writeSerialStr("command error arguments");
+			return;
+		}
+
+		const toX = Number(split[1]);
+		const toY = Number(split[2]);
+
+		if (Number.isNaN(toX) || Number.isNaN(toY)) {
+			writeSerialStr("command error arguments");
+			return;
+		}
+
+		const t = clock.getElapsed();
+
+		if (pipetteHead.isMoving) {
+			writeSerialStr("move error move_in_progress");
+			return;
+		}
+
+		pipetteHead.isMoving = true;
+		pipetteHead.moveStart = t;
+		pipetteHead.fromX = pipetteHead.x;
+		pipetteHead.fromY = pipetteHead.y;
+		pipetteHead.toX = toX;
+		pipetteHead.toY = toY;
+	} else if (cmd == "get") {
+		if (split.length != 2) {
+			writeSerialStr("command error arguments");
+			return;
+		}
+
+		if (split[1] == "position") {
+			writeSerialStr("get " + pipetteHead.x + " " + pipetteHead.y);
+		} else {
+			writeSerialStr("command error arguments");
+			return;
+		}
+	}
+}
+
+function readSerialStr(): string {
+	const buf = py2JsBuffer.read(py2JsBuffer.available());
+	return new TextDecoder().decode(buf);
+}
+
+function writeSerialStr(str: string) {
+	js2PyPipe?.write(new TextEncoder().encode(str + "\n"));
 }
 
 function worldToScene(x: number, y: number, z: number): THREE.Vector3 {
