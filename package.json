@@ -10,11 +10,13 @@
   },
   "dependencies": {
     "monaco-editor": "^0.55.1",
+    "pyodide": "^314.0.2",
     "three": "^0.180.0"
   },
   "devDependencies": {
     "@types/three": "^0.185.1",
     "typescript": "^5.9.3",
-    "vite": "^8.1.4"
+    "vite": "^8.1.4",
+    "vite-plugin-static-copy": "^4.1.1"
   }
 }

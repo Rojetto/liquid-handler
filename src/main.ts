@@ -6,6 +6,8 @@ import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import type { PythonWorkerRequest, PythonWorkerResponse } from './pythonWorkerMessages';
+import PythonRuntimeWorker from './pythonRuntime.worker?worker';
 
 type MonacoEnvironment = {
 	getWorker: () => Worker;
@@ -79,6 +81,12 @@ let pipetteHead: PipetteHead;
 let plates: Plate[] = [];
 let simulationElement: HTMLDivElement;
 let scriptEditor: monaco.editor.IStandaloneCodeEditor;
+let runScriptButton: HTMLButtonElement;
+let scriptStatusElement: HTMLSpanElement;
+let scriptOutputElement: HTMLPreElement;
+let pythonWorker: Worker;
+let nextPythonRequestId = 0;
+let activePythonRequestId = 0;
 let clock: THREE.Timer;
 let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
@@ -180,20 +188,24 @@ async function setup(): Promise<void> {
 function setupEditor(): void {
 	const nextSimulationElement = document.querySelector<HTMLDivElement>('#simulation-pane');
 	const editorElement = document.querySelector<HTMLDivElement>('#script-editor');
+	const nextRunScriptButton = document.querySelector<HTMLButtonElement>('#run-script-button');
+	const nextScriptStatusElement = document.querySelector<HTMLSpanElement>('#script-status');
+	const nextScriptOutputElement = document.querySelector<HTMLPreElement>('#script-output');
 
-	if (!nextSimulationElement || !editorElement) {
+	if (!nextSimulationElement || !editorElement || !nextRunScriptButton || !nextScriptStatusElement || !nextScriptOutputElement) {
 		throw new Error('Missing simulator or editor pane');
 	}
 
 	simulationElement = nextSimulationElement;
+	runScriptButton = nextRunScriptButton;
+	scriptStatusElement = nextScriptStatusElement;
+	scriptOutputElement = nextScriptOutputElement;
 	scriptEditor = monaco.editor.create(editorElement, {
 		value: [
-			'from liquid_handler import protocol',
+			'print("Hello from Pyodide")',
 			'',
-			'protocol.pick_up_tip("tiprack_1", "A1")',
-			'protocol.aspirate("reservoir_1", "A1", volume_ul=50)',
-			'protocol.dispense("plate_1", "A1", volume_ul=50)',
-			'protocol.drop_tip()',
+			'for step in range(3):',
+			'    print(f"Protocol step {step + 1}")',
 			''
 		].join('\n'),
 		language: 'python',
@@ -208,6 +220,64 @@ function setupEditor(): void {
 		tabSize: 4,
 		insertSpaces: true
 	});
+
+	pythonWorker = new PythonRuntimeWorker();
+	pythonWorker.addEventListener('message', handlePythonWorkerMessage);
+	pythonWorker.addEventListener('error', (event) => {
+		runScriptButton.disabled = false;
+		scriptStatusElement.textContent = 'Worker error';
+		appendScriptOutput(`Worker error: ${event.message}`, 'stderr');
+	});
+	runScriptButton.addEventListener('click', runPythonScript);
+}
+
+function runPythonScript(): void {
+	activePythonRequestId = nextPythonRequestId + 1;
+	nextPythonRequestId = activePythonRequestId;
+	runScriptButton.disabled = true;
+	scriptStatusElement.textContent = 'Starting...';
+	scriptOutputElement.textContent = '';
+
+	const request: PythonWorkerRequest = {
+		type: 'run',
+		requestId: activePythonRequestId,
+		code: scriptEditor.getValue()
+	};
+
+	pythonWorker.postMessage(request);
+}
+
+function handlePythonWorkerMessage(event: MessageEvent<PythonWorkerResponse>): void {
+	const response = event.data;
+
+	if (response.requestId !== activePythonRequestId) {
+		return;
+	}
+
+	switch (response.type) {
+		case 'status':
+			scriptStatusElement.textContent = response.message;
+			break;
+		case 'stdout':
+		case 'stderr':
+			appendScriptOutput(response.text, response.type);
+			break;
+		case 'done':
+			runScriptButton.disabled = false;
+			scriptStatusElement.textContent = 'Finished';
+			break;
+		case 'error':
+			runScriptButton.disabled = false;
+			scriptStatusElement.textContent = 'Error';
+			appendScriptOutput(response.error, 'stderr');
+			break;
+	}
+}
+
+function appendScriptOutput(text: string, stream: 'stdout' | 'stderr'): void {
+	const prefix = stream === 'stderr' ? 'stderr: ' : '';
+	scriptOutputElement.textContent += `${prefix}${text}\n`;
+	scriptOutputElement.scrollTop = scriptOutputElement.scrollHeight;
 }
 
 function update() {

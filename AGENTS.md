@@ -52,6 +52,7 @@ The simulation should prioritize being understandable, interactive, and visually
 - Do not introduce large abstractions before the model demands them.
 - When adding dependencies, justify why native TypeScript/browser/three.js functionality is insufficient.
 - Before finishing meaningful code changes, run the available type check/build command.
+- Do not automatically start a dev server or use a browser session to verify changes. Verify with compile/build/typecheck only unless explicitly asked otherwise.
 
 ## Expected Initial Setup
 
