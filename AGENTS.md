@@ -48,6 +48,7 @@ The simulation should prioritize being understandable, interactive, and visually
 
 - Keep files and modules small enough to inspect easily.
 - Use descriptive names for simulation concepts.
+- Avoid creating helper functions that are only used in a single location; inline the logic unless it meaningfully improves readability or isolates a distinct concept.
 - Add comments only where they clarify non-obvious simulation assumptions or coordinate conventions.
 - Do not introduce large abstractions before the model demands them.
 - When adding dependencies, justify why native TypeScript/browser/three.js functionality is insufficient.

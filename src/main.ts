@@ -20,19 +20,30 @@ type MonacoEnvironment = {
 	}
 };
 
-type WellContents = [liquidId: number, volumeUl: number];
+const MODEL_IMPORT_SCALE = 100;
+
+class Well {
+	liquidId: number;
+	volumeUl: number;
+	t3: THREE.Mesh | undefined;
+
+	constructor(liquidId = 0, volumeUl = 0) {
+		this.liquidId = liquidId;
+		this.volumeUl = volumeUl;
+	}
+}
 
 class Plate {
 	x: number;
 	y: number;
-	wells: WellContents[][];
+	wells: Well[][];
 	t3: THREE.Object3D | undefined;
 
 	constructor(x: number, y: number) {
 		this.x = x;
 		this.y = y;
 		this.wells = Array.from({ length: 12 }, () =>
-			Array.from({ length: 8 }, (): WellContents => [0, 0])
+			Array.from({ length: 8 }, () => new Well())
 		);
 	}
 }
@@ -162,6 +173,7 @@ let plateTemplate: THREE.Object3D;
 let reservoirTemplate: THREE.Object3D;
 let pipetteBaseTemplate: THREE.Object3D;
 let pipetteTipTemplate: THREE.Object3D;
+let liquidTemplate: THREE.Mesh;
 
 async function setup(): Promise<void> {
 	setupEditor();
@@ -172,10 +184,15 @@ async function setup(): Promise<void> {
 
 	for (let row = 0; row < 2; row += 1) {
 		for (let column = 0; column < 2; column += 1) {
-			plates.push(new Plate(
-				column * 13,
-				row * 9
-			));
+			const plate = new Plate(column * 13, row * 9);
+			for (let col = 0; col < plate.wells.length; ++col) {
+				const wellsInCol = plate.wells[col];
+				for (let row = 0; row < wellsInCol.length; ++row) {
+					plate.wells[col][row].liquidId = 1;
+					plate.wells[col][row].volumeUl = Math.round(Math.random() * 200); // max 200 uL
+				}
+			}
+			plates.push(plate);
 		}
 	}
 
@@ -201,6 +218,18 @@ async function setup(): Promise<void> {
 	setModelShadows(plateTemplate, true, true);
 	setModelShadows(pipetteBaseTemplate, true, true);
 	setModelShadows(pipetteTipTemplate, true, true);
+
+	liquidTemplate = new THREE.Mesh(
+		new THREE.BoxGeometry(0.0095, 0.01, 0.0095),
+		new THREE.MeshStandardMaterial({
+			color: new THREE.Color("#49b7ff").getHex(),
+			transparent: true,
+			opacity: 0.72,
+			roughness: 0.35,
+			metalness: 0
+		})
+	);
+	liquidTemplate.receiveShadow = true;
 
 	clock = new THREE.Timer();
 	clock.connect(document);
@@ -240,6 +269,19 @@ async function setup(): Promise<void> {
 	for (const plate of plates) {
 		const t3 = plateTemplate.clone();
 		plate.t3 = t3;
+
+		for (let col = 0; col < plate.wells.length; col += 1) {
+			const wellsInCol = plate.wells[col];
+
+			for (let row = 0; row < wellsInCol.length; row += 1) {
+				const well = wellsInCol[row];
+				const wellT3 = liquidTemplate.clone();
+				wellT3.position.copy(worldToScene(col, row, 0.1).multiplyScalar(1 / MODEL_IMPORT_SCALE));
+				well.t3 = wellT3;
+				t3.add(wellT3);
+			}
+		}
+
 		scene.add(t3);
 	}
 
@@ -457,6 +499,15 @@ function update() {
 	// Update world state to scene objects
 	for (const plate of plates) {
 		plate.t3?.position.copy(worldToScene(plate.x, plate.y, 0));
+		for (const wellCol of plate.wells) {
+			for (const well of wellCol) {
+				if (well.t3) {
+					well.t3.visible = well.volumeUl > 0;
+					well.t3.scale.y = well.volumeUl / 200;
+					well.t3.position.y = 0.001 + (well.volumeUl / 200) * 0.01 / 2;
+				}
+			}
+		}
 	}
 
 	for (let channel = 0; channel < pipetteHead.pipettes.length; channel += 1) {
@@ -612,7 +663,7 @@ function loadAsset(assetFileName: string): Promise<THREE.Object3D> {
 			assetUrl,
 			(gltf) => {
 				const object = gltf.scene;
-				object.scale.setScalar(100);
+				object.scale.setScalar(MODEL_IMPORT_SCALE);
 				resolve(object);
 			},
 			undefined,
