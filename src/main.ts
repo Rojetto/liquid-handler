@@ -21,6 +21,9 @@ type MonacoEnvironment = {
 };
 
 const MODEL_IMPORT_SCALE = 100;
+const PIPETTE_MAX_VOL = 300;
+const WELL_MAX_VOL = 200;
+const LIQUID_MESH_HEIGHT = 0.016;
 
 class Well {
 	liquidId: number;
@@ -226,7 +229,7 @@ async function setup(): Promise<void> {
 				const wellsInCol = plate.wells[col];
 				for (let row = 0; row < wellsInCol.length; ++row) {
 					plate.wells[col][row].liquidId = 1;
-					plate.wells[col][row].volumeUl = Math.round(Math.random() * 200); // max 200 uL
+					plate.wells[col][row].volumeUl = WELL_MAX_VOL;
 				}
 			}
 			plates.push(plate);
@@ -545,12 +548,11 @@ function update() {
 			const x = pipetteHead.x;
 			const y = pipetteHead.y + pipetteIndex;
 
-			// TODO implement volume limits
 			const well = getWellAt(x, y);
 			if (well) {
 				const movedVolume = pipette.aspirationVol > 0
-					? Math.min(well.volumeUl, pipette.aspirationVol)
-					: - Math.min(pipette.volumeUl, -pipette.aspirationVol)
+					? Math.min(well.volumeUl, pipette.aspirationVol, PIPETTE_MAX_VOL - pipette.volumeUl)
+					: - Math.min(pipette.volumeUl, -pipette.aspirationVol, WELL_MAX_VOL - well.volumeUl)
 				
 				well.volumeUl -= movedVolume;
 				pipette.volumeUl += movedVolume;
@@ -578,8 +580,8 @@ function update() {
 			for (const well of wellCol) {
 				if (well.t3) {
 					well.t3.visible = well.volumeUl > 0;
-					well.t3.scale.y = well.volumeUl / 200;
-					well.t3.position.y = 0.001 + (well.volumeUl / 200) * 0.01 / 2;
+					well.t3.scale.y = well.volumeUl / WELL_MAX_VOL;
+					well.t3.position.y = 0.001 + (well.volumeUl / WELL_MAX_VOL) * LIQUID_MESH_HEIGHT / 2;
 				}
 			}
 		}
