@@ -168,6 +168,12 @@ class RingBuffer {
 		return data;
 	}
 
+	clear(): void {
+		this.readIndex = 0;
+		this.writeIndex = 0;
+		this.byteCount = 0;
+	}
+
 	available(): number {
 		return this.byteCount;
 	}
@@ -407,6 +413,7 @@ function runPythonScript(): void {
 	runScriptButton.disabled = true;
 	scriptStatusElement.textContent = 'Starting...';
 	scriptOutputElement.textContent = '';
+	clearSerialBuffers();
 
 	const request: PythonWorkerRequest = {
 		type: 'run',
@@ -436,10 +443,12 @@ function handlePythonWorkerMessage(event: MessageEvent<PythonWorkerResponse>): v
 		case 'done':
 			runScriptButton.disabled = false;
 			scriptStatusElement.textContent = 'Finished';
+			clearSerialBuffers();
 			break;
 		case 'error':
 			runScriptButton.disabled = false;
 			scriptStatusElement.textContent = 'Error';
+			clearSerialBuffers();
 			appendScriptOutput(response.error, 'stderr');
 			break;
 		case 'py2js': {
@@ -477,12 +486,14 @@ function configurePythonSerialInput(): void {
 function handlePythonWorkerError(event: ErrorEvent): void {
 	runScriptButton.disabled = false;
 	scriptStatusElement.textContent = 'Worker error';
+	clearSerialBuffers();
 	appendScriptOutput(`Worker error: ${formatWorkerError(event)}`, 'stderr');
 }
 
 function handlePythonWorkerMessageError(): void {
 	runScriptButton.disabled = false;
 	scriptStatusElement.textContent = 'Worker message error';
+	clearSerialBuffers();
 	appendScriptOutput('Worker message error: failed to deserialize a worker message.', 'stderr');
 }
 
@@ -711,6 +722,12 @@ function processCommand(split: string[]): void {
 function readSerialStr(): string {
 	const buf = py2JsBuffer.read(py2JsBuffer.available());
 	return new TextDecoder().decode(buf);
+}
+
+function clearSerialBuffers(): void {
+	py2JsBuffer.clear();
+	js2PyPipe?.clear();
+	commandsIn = "";
 }
 
 function writeSerialStr(str: string) {

@@ -108,6 +108,12 @@ export class SharedSerialPipe {
 		return data;
 	}
 
+	clear(): void {
+		Atomics.store(this.header, READ_INDEX, 0);
+		Atomics.store(this.header, WRITE_INDEX, 0);
+		Atomics.store(this.header, AVAILABLE, 0);
+	}
+
 	close(): void {
 		Atomics.store(this.header, CLOSED, 1);
 		Atomics.notify(this.header, AVAILABLE, 1);
