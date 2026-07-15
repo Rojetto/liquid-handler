@@ -1,5 +1,7 @@
 # Liquid Handler Simulator
 
+[Click here to open simulator!](https://heedt.net/liquid-handler/)
+
 A browser-based simulator for high-level liquid handling workflows. It pairs a real-time 3D deck view with an embedded Python protocol editor that talks to the simulator through a simple serial-style command protocol.
 
 ## Capabilities
