@@ -21,6 +21,16 @@ def cmd_move(x, y):
 	if resp != "move complete":
 		raise HandlerError("Move failed: " + resp)
 
+def cmd_pick_up_tips():
+	for i in range(CHANNELS):
+		serial.write(f"pick_up_tip {i}\n")
+
+	for i in range(CHANNELS):
+		resp = serial.readline().strip()
+		split = resp.split()
+		if len(split) != 3 or split[0] != "pick_up_tip" or split[2] != "complete":
+			raise HandlerError("Pick up tip failed: " + resp)
+
 def cmd_aspirate_all(vol):
 	for i in range(CHANNELS):
 		serial.write(f"aspirate {i} {vol}\n")
@@ -102,6 +112,10 @@ def demo_2_clean_up():
 						cur_well[1] = 0
 			else:
 				channel = channel + 1
+
+# Pick up tips
+cmd_move(26, 0)
+cmd_pick_up_tips()
 
 demo_1_dilution_chain()
 demo_2_clean_up()

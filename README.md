@@ -48,8 +48,9 @@ Commands are split on spaces. Blank lines are ignored. Unknown commands currentl
 | Command | Meaning | Success response |
 | --- | --- | --- |
 | `move <x> <y>` | Move the 8-channel head so channel 0 is over `(x, y)`. `x` and `y` may be numeric values. | `move complete` |
-| `aspirate <channel> <volumeUl>` | Aspirate from the well under one channel. `channel` must be `0`-`7`; `volumeUl` must be an integer from `0` to `200`. | `aspirate <channel> <actualVolumeUl>` |
-| `dispense <channel> <volumeUl>` | Dispense into the well under one channel. `channel` must be `0`-`7`; `volumeUl` must be an integer from `0` to `200`. | `dispense <channel> <actualVolumeUl>` |
+| `pick_up_tip <channel>` | Pick up a tip with one channel. `channel` must be `0`-`7`, the channel must be over a tip dispenser, and the pipette must be idle. | `pick_up_tip <channel> complete` |
+| `aspirate <channel> <volumeUl>` | Aspirate from the well under one channel. `channel` must be `0`-`7`, `volumeUl` must be an integer from `0` to `200`, and the channel must have an attached tip. | `aspirate <channel> <actualVolumeUl>` |
+| `dispense <channel> <volumeUl>` | Dispense into the well under one channel. `channel` must be `0`-`7`, `volumeUl` must be an integer from `0` to `200`, and the channel must have an attached tip. | `dispense <channel> <actualVolumeUl>` |
 | `get position` | Read the current head position. | `get <x> <y>` |
 
 `actualVolumeUl` may be lower than requested. Aspirate is limited by source well volume and pipette capacity. Dispense is limited by pipette contents and destination well capacity.
@@ -61,11 +62,16 @@ Commands are split on spaces. Blank lines are ignored. Unknown commands currentl
 | `command error arguments` | Wrong argument count, invalid number, invalid channel, invalid volume, or unknown `get` field. |
 | `move error move_in_progress` | A `move` command was sent while the head was already moving. |
 | `move error pipette_in_progress` | A `move` command was sent while any channel was aspirating or dispensing. |
+| `pick_up_tip error move_in_progress` | A pick-up command was sent while the head was moving. |
+| `pick_up_tip error pipette_in_progress` | The requested channel was already busy. |
+| `pick_up_tip error no_dispenser` | The requested channel is not positioned over a tip dispenser. |
 | `aspirate error move_in_progress` | An aspirate command was sent while the head was moving. |
 | `aspirate error pipette_in_progress` | The requested channel was already busy. |
+| `aspirate error no_tip` | The requested channel does not have an attached tip. |
 | `aspirate error no_well` | The requested channel is not positioned over a well. |
 | `dispense error move_in_progress` | A dispense command was sent while the head was moving. |
 | `dispense error pipette_in_progress` | The requested channel was already busy. |
+| `dispense error no_tip` | The requested channel does not have an attached tip. |
 | `dispense error no_well` | The requested channel is not positioned over a well. |
 
 ## Use

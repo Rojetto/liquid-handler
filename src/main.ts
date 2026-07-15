@@ -28,6 +28,16 @@ const PIPETTE_MAX_VOL = 300;
 const WELL_MAX_VOL = 200;
 const LIQUID_MESH_HEIGHT = 0.016;
 
+class PipetteTipDispenser {
+	x: number;
+	y: number;
+
+	constructor(x: number, y: number) {
+		this.x = x;
+		this.y = y;
+	}
+}
+
 class Well {
 	volumeUl: number;
 	fromVol: number;
@@ -58,7 +68,9 @@ class Plate {
 	}
 }
 
-type PipetteState = 'neutral' | 'lowering' | 'aspirating' | 'raising';
+type PipetteState = 'neutral'
+					| 'aspirate_lowering' | 'aspirating' | 'aspirate_raising'
+					| 'pick_tip_lowering' | 'pick_tip_raising';
 
 class Pipette {
 	z: number;
@@ -80,12 +92,13 @@ class Pipette {
 		this.state = 'neutral';
 		this.volumeUl = 0;
 		this.aspirationVol = 0;
-		this.tipAttached = true;
+		this.tipAttached = false;
 	}
 }
 
 const PIPETTE_NEUTRAL_Z = 10;
 const PIPETTE_ASPIRATE_Z = 8;
+const PIPETTE_PICK_TIP_Z = 3 + 2;
 
 class PipetteHead {
 	x: number;
@@ -180,6 +193,7 @@ class RingBuffer {
 
 let pipetteHead: PipetteHead;
 let plates: Plate[] = [];
+let pipetteTipDispenser: PipetteTipDispenser;
 
 function getWellAt(x: number, y: number): Well | undefined {
 	for (const plate of plates) {
@@ -198,6 +212,23 @@ function getWellAt(x: number, y: number): Well | undefined {
 		) {
 			return plate.wells[col][row];
 		}
+	}
+
+	return undefined;
+}
+
+function getTipDispenserAt(x: number, y: number): PipetteTipDispenser | undefined {
+	const localX = x - pipetteTipDispenser.x;
+	const localY = y - pipetteTipDispenser.y;
+	const row = Math.round(localY);
+
+	if (
+		row >= 0 &&
+		row < pipetteHead.pipettes.length &&
+		Math.abs(localX) < 0.5 &&
+		Math.abs(localY - row) < 0.5
+	) {
+		return pipetteTipDispenser;
 	}
 
 	return undefined;
@@ -345,6 +376,8 @@ function setupWorld(): void {
 		}
 	}
 
+	pipetteTipDispenser = new PipetteTipDispenser(26, 0);
+
 	// Create scene objects for all world objects
 	for (const plate of plates) {
 		const t3 = plateTemplate.clone();
@@ -372,6 +405,19 @@ function setupWorld(): void {
 		pipette.t3Tip = t3Tip;
 		scene.add(t3Base);
 		scene.add(t3Tip);
+	}
+
+	if (pipetteTipDispenser) {
+		const t3Reservoir = reservoirTemplate.clone();
+		t3Reservoir.position.copy(worldToScene(pipetteTipDispenser.x, pipetteTipDispenser.y, 0));
+
+		for (let i = 0; i < 8; ++i) {
+			const t3Tip = pipetteTipTemplate.clone();
+			t3Tip.position.copy(worldToScene(pipetteTipDispenser.x, pipetteTipDispenser.y + i, PIPETTE_PICK_TIP_Z - 2));
+			scene.add(t3Tip);
+		}
+
+		scene.add(t3Reservoir);
 	}
 
 	resetWorldButton.disabled = false;
@@ -635,11 +681,13 @@ function update() {
 	for (let pipetteIndex = 0; pipetteIndex < pipetteHead.pipettes.length; ++pipetteIndex) {
 		const pipette = pipetteHead.pipettes[pipetteIndex];
 
-		if (pipette.state == "lowering" || pipette.state == "raising") {
+		if (pipette.state == "aspirate_lowering" || pipette.state == "aspirate_raising"
+			|| pipette.state == "pick_tip_lowering" || pipette.state == "pick_tip_raising"
+		) {
 			pipette.z = accLerp(pipette.fromZ, pipette.toZ, pipette.moveStart, t);
 		}
 
-		if (pipette.state == "lowering" && pipette.z == pipette.toZ) {
+		if (pipette.state == "aspirate_lowering" && pipette.z == pipette.toZ) {
 			const x = pipetteHead.x;
 			const y = pipetteHead.y + pipetteIndex;
 
@@ -667,18 +715,27 @@ function update() {
 			}
 
 			if (!well || well.volumeUl == well.toVol) {
-				pipette.state = "raising";
+				pipette.state = "aspirate_raising";
 				pipette.moveStart = t;
 				pipette.fromZ = pipette.z;
 				pipette.toZ = PIPETTE_NEUTRAL_Z;
 			}
-		} else if (pipette.state == "raising" && pipette.z == pipette.toZ) {
+		} else if (pipette.state == "aspirate_raising" && pipette.z == pipette.toZ) {
 			pipette.state = "neutral";
 			if (pipette.aspirationVol > 0) {
 				writeSerialStr("aspirate " + pipetteIndex + " " + pipette.aspirationVol);
 			} else {
 				writeSerialStr("dispense " + pipetteIndex + " " + (-pipette.aspirationVol));
 			}
+		} else if (pipette.state == "pick_tip_lowering" && pipette.z == pipette.toZ) {
+			pipette.tipAttached = true;
+			pipette.state = "pick_tip_raising";
+			pipette.moveStart = t;
+			pipette.fromZ = pipette.z;
+			pipette.toZ = PIPETTE_NEUTRAL_Z;
+		} else if (pipette.state == "pick_tip_raising" && pipette.z == pipette.toZ) {
+			pipette.state = "neutral";
+			writeSerialStr("pick_up_tip " + pipetteIndex + " complete");
 		}
 	}
 
@@ -773,17 +830,60 @@ function processCommand(split: string[]): void {
 			return;
 		}
 
+		if (!pipette.tipAttached) {
+			writeSerialStr(cmd + " error no_tip");
+			return;
+		}
+
 		const well = getWellAt(pipetteHead.x, pipetteHead.y + pipetteIndex);
 		if (!well) {
 			writeSerialStr(cmd + " error no_well");
 			return;
 		}
 
-		pipette.state = "lowering";
+		pipette.state = "aspirate_lowering";
 		pipette.fromZ = pipette.z;
 		pipette.toZ = PIPETTE_ASPIRATE_Z;
 		pipette.moveStart = t;
 		pipette.aspirationVol = cmd == "aspirate" ? volume : -volume;
+	} else if (cmd == "pick_up_tip") {
+		if (split.length != 2) {
+			writeSerialStr("command error arguments");
+			return;
+		}
+
+		const pipetteIndex = Number(split[1]);
+
+		if (
+			!Number.isInteger(pipetteIndex) ||
+			pipetteIndex < 0 ||
+			pipetteIndex >= pipetteHead.pipettes.length
+		) {
+			writeSerialStr("command error arguments");
+			return;
+		}
+
+		if (pipetteHead.isMoving) {
+			writeSerialStr("pick_up_tip error move_in_progress");
+			return;
+		}
+
+		const pipette = pipetteHead.pipettes[pipetteIndex];
+		if (pipette.state != "neutral") {
+			writeSerialStr("pick_up_tip error pipette_in_progress");
+			return;
+		}
+
+		const tipDispenser = getTipDispenserAt(pipetteHead.x, pipetteHead.y + pipetteIndex);
+		if (!tipDispenser) {
+			writeSerialStr("pick_up_tip error no_dispenser");
+			return;
+		}
+
+		pipette.state = "pick_tip_lowering";
+		pipette.fromZ = pipette.z;
+		pipette.toZ = PIPETTE_PICK_TIP_Z;
+		pipette.moveStart = t;
 	} else if (cmd == "get") {
 		if (split.length != 2) {
 			writeSerialStr("command error arguments");
