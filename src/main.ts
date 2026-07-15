@@ -314,8 +314,25 @@ function setupWorld(): void {
 			const plate = new Plate(column * 13, row * 9);
 			for (let col = 0; col < plate.wells.length; ++col) {
 				const wellsInCol = plate.wells[col];
-				for (let row = 0; row < wellsInCol.length; ++row) {
-					plate.wells[col][row].volumeUl = Math.round(Math.random() * WELL_MAX_VOL);
+				for (let wellRow = 0; wellRow < wellsInCol.length; ++wellRow) {
+					const well = wellsInCol[wellRow];
+					let volumeUl = 0;
+
+					if (row === 0 && column === 0) {
+						if (col === 0) {
+							volumeUl = 200;
+						} else if (col === 1) {
+							volumeUl = 100;
+						} else if (col >= 3 && col <= 6) {
+							volumeUl = 125;
+						}
+					} else if (row === 1) {
+						volumeUl = Math.round(Math.random() * WELL_MAX_VOL);
+					}
+
+					well.volumeUl = volumeUl;
+					well.fromVol = volumeUl;
+					well.toVol = volumeUl;
 				}
 			}
 			plates.push(plate);
