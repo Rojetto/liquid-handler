@@ -28,11 +28,17 @@ const LIQUID_MESH_HEIGHT = 0.016;
 class Well {
 	liquidId: number;
 	volumeUl: number;
+	fromVol: number;
+	toVol: number;
+	aspirateStart: number;
 	t3: THREE.Mesh | undefined;
 
 	constructor(liquidId = 0, volumeUl = 0) {
 		this.liquidId = liquidId;
 		this.volumeUl = volumeUl;
+		this.fromVol = volumeUl;
+		this.toVol = volumeUl;
+		this.aspirateStart = 0;
 	}
 }
 
@@ -229,7 +235,7 @@ async function setup(): Promise<void> {
 				const wellsInCol = plate.wells[col];
 				for (let row = 0; row < wellsInCol.length; ++row) {
 					plate.wells[col][row].liquidId = 1;
-					plate.wells[col][row].volumeUl = WELL_MAX_VOL;
+					plate.wells[col][row].volumeUl = Math.round(Math.random() * WELL_MAX_VOL);
 				}
 			}
 			plates.push(plate);
@@ -543,8 +549,6 @@ function update() {
 		}
 
 		if (pipette.state == "lowering" && pipette.z == pipette.toZ) {
-			pipette.state = "aspirating";
-		} else if (pipette.state == "aspirating") {
 			const x = pipetteHead.x;
 			const y = pipetteHead.y + pipetteIndex;
 
@@ -553,16 +557,30 @@ function update() {
 				const movedVolume = pipette.aspirationVol > 0
 					? Math.min(well.volumeUl, pipette.aspirationVol, PIPETTE_MAX_VOL - pipette.volumeUl)
 					: - Math.min(pipette.volumeUl, -pipette.aspirationVol, WELL_MAX_VOL - well.volumeUl)
-				
-				well.volumeUl -= movedVolume;
+
+				well.fromVol = well.volumeUl;
+				well.toVol = well.volumeUl - movedVolume;
+				well.aspirateStart = t;
 				pipette.volumeUl += movedVolume;
 				pipette.aspirationVol = movedVolume; // for success message later
 			}
 
-			pipette.state = "raising";
-			pipette.moveStart = t;
-			pipette.fromZ = pipette.z;
-			pipette.toZ = PIPETTE_NEUTRAL_Z;
+			pipette.state = "aspirating";
+		} else if (pipette.state == "aspirating") {
+			const x = pipetteHead.x;
+			const y = pipetteHead.y + pipetteIndex;
+
+			const well = getWellAt(x, y);
+			if (well) {
+				well.volumeUl = accLerp(well.fromVol, well.toVol, well.aspirateStart, t, DEFAULT_VOLUME_MAX_V, DEFAULT_VOLUME_MAX_ACC);
+			}
+
+			if (!well || well.volumeUl == well.toVol) {
+				pipette.state = "raising";
+				pipette.moveStart = t;
+				pipette.fromZ = pipette.z;
+				pipette.toZ = PIPETTE_NEUTRAL_Z;
+			}
 		} else if (pipette.state == "raising" && pipette.z == pipette.toZ) {
 			pipette.state = "neutral";
 			if (pipette.aspirationVol > 0) {
@@ -659,6 +677,17 @@ function processCommand(split: string[]): void {
 		}
 
 		const pipette = pipetteHead.pipettes[pipetteIndex];
+		if (pipette.state != "neutral") {
+			writeSerialStr(cmd + " error pipette_in_progress");
+			return;
+		}
+
+		const well = getWellAt(pipetteHead.x, pipetteHead.y + pipetteIndex);
+		if (!well) {
+			writeSerialStr(cmd + " error no_well");
+			return;
+		}
+
 		pipette.state = "lowering";
 		pipette.fromZ = pipette.z;
 		pipette.toZ = PIPETTE_ASPIRATE_Z;
@@ -694,6 +723,8 @@ function worldToScene(x: number, y: number, z: number): THREE.Vector3 {
 
 const DEFAULT_MOTION_MAX_V = 20;
 const DEFAULT_MOTION_MAX_ACC = 60;
+const DEFAULT_VOLUME_MAX_V = 160;
+const DEFAULT_VOLUME_MAX_ACC = 480;
 
 function accLerp(
 	from: number,
