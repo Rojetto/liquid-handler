@@ -27,15 +27,13 @@ const WELL_MAX_VOL = 200;
 const LIQUID_MESH_HEIGHT = 0.016;
 
 class Well {
-	liquidId: number;
 	volumeUl: number;
 	fromVol: number;
 	toVol: number;
 	aspirateStart: number;
 	t3: THREE.Mesh | undefined;
 
-	constructor(liquidId = 0, volumeUl = 0) {
-		this.liquidId = liquidId;
+	constructor(volumeUl = 0) {
 		this.volumeUl = volumeUl;
 		this.fromVol = volumeUl;
 		this.toVol = volumeUl;
@@ -66,7 +64,6 @@ class Pipette {
 	toZ: number;
 	moveStart: number;
 	state: PipetteState;
-	liquidId: number;
 	volumeUl: number;
 	aspirationVol: number;
 	tipAttached: boolean;
@@ -79,7 +76,6 @@ class Pipette {
 		this.toZ = z;
 		this.moveStart = 0;
 		this.state = 'neutral';
-		this.liquidId = 0;
 		this.volumeUl = 0;
 		this.aspirationVol = 0;
 		this.tipAttached = true;
@@ -319,7 +315,6 @@ function setupWorld(): void {
 			for (let col = 0; col < plate.wells.length; ++col) {
 				const wellsInCol = plate.wells[col];
 				for (let row = 0; row < wellsInCol.length; ++row) {
-					plate.wells[col][row].liquidId = 1;
 					plate.wells[col][row].volumeUl = Math.round(Math.random() * WELL_MAX_VOL);
 				}
 			}
