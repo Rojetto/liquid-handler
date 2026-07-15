@@ -17,6 +17,7 @@ const crossOriginIsolationHeaders = {
 };
 
 export default defineConfig({
+  base: '/liquid-handler/',
   optimizeDeps: {
     exclude: ['pyodide']
   },
