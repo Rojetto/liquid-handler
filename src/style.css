@@ -89,12 +89,10 @@ body {
   border-bottom: 1px solid #2a303d;
 }
 
-#run-script-button {
+.script-actions button {
   min-width: 76px;
   height: 32px;
   padding: 0 14px;
-  color: #071210;
-  background: #8ad3c7;
   border: 0;
   border-radius: 6px;
   font: inherit;
@@ -103,10 +101,21 @@ body {
   cursor: pointer;
 }
 
-#run-script-button:disabled {
-  color: #68727f;
-  background: #2b323d;
-  cursor: wait;
+#run-script-button {
+  color: #071210;
+  background: #8ad3c7;
+}
+
+#reset-world-button {
+  color: #dce4ef;
+  background: #2d3542;
+}
+
+.script-actions button:disabled {
+  color: #7d8591;
+  background: #20252d;
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 #script-status {

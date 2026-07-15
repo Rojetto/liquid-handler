@@ -207,6 +207,7 @@ function getWellAt(x: number, y: number): Well | undefined {
 let simulationElement: HTMLDivElement;
 let scriptEditor: monaco.editor.IStandaloneCodeEditor;
 let runScriptButton: HTMLButtonElement;
+let resetWorldButton: HTMLButtonElement;
 let scriptStatusElement: HTMLSpanElement;
 let scriptOutputElement: HTMLPreElement;
 
@@ -229,24 +230,6 @@ let liquidTemplate: THREE.Mesh;
 
 async function setup(): Promise<void> {
 	setupEditor();
-
-	// Setup world model
-	pipetteHead = new PipetteHead(0, 0);
-	plates = [];
-
-	for (let row = 0; row < 2; row += 1) {
-		for (let column = 0; column < 2; column += 1) {
-			const plate = new Plate(column * 13, row * 9);
-			for (let col = 0; col < plate.wells.length; ++col) {
-				const wellsInCol = plate.wells[col];
-				for (let row = 0; row < wellsInCol.length; ++row) {
-					plate.wells[col][row].liquidId = 1;
-					plate.wells[col][row].volumeUl = Math.round(Math.random() * WELL_MAX_VOL);
-				}
-			}
-			plates.push(plate);
-		}
-	}
 
 	// Setup serial communication
 	py2JsBuffer = new RingBuffer(10*1024); // 10k buffer
@@ -301,6 +284,15 @@ async function setup(): Promise<void> {
 	controls = new OrbitControls(camera, renderer.domElement);
 	controls.target.set(12, 0, -8);
 
+	window.addEventListener('resize', resize);
+	resize();
+
+	setupWorld();
+}
+
+function setupWorld(): void {
+	scene.clear();
+
 	const ambient = new THREE.AmbientLight("white", 0.1);
 	scene.add(ambient);
 
@@ -315,6 +307,24 @@ async function setup(): Promise<void> {
 	const floorGrid = new THREE.GridHelper(400, 400, new THREE.Color("#8a8a8a").getHex(), new THREE.Color("#424242").getHex());
 	floorGrid.position.copy(worldToScene(0, 0, 0));
 	scene.add(floorGrid);
+
+	// Setup world model
+	pipetteHead = new PipetteHead(0, 0);
+	plates = [];
+
+	for (let row = 0; row < 2; row += 1) {
+		for (let column = 0; column < 2; column += 1) {
+			const plate = new Plate(column * 13, row * 9);
+			for (let col = 0; col < plate.wells.length; ++col) {
+				const wellsInCol = plate.wells[col];
+				for (let row = 0; row < wellsInCol.length; ++row) {
+					plate.wells[col][row].liquidId = 1;
+					plate.wells[col][row].volumeUl = Math.round(Math.random() * WELL_MAX_VOL);
+				}
+			}
+			plates.push(plate);
+		}
+	}
 
 	// Create scene objects for all world objects
 	for (const plate of plates) {
@@ -345,23 +355,25 @@ async function setup(): Promise<void> {
 		scene.add(t3Tip);
 	}
 
-	window.addEventListener('resize', resize);
-	resize();
+	resetWorldButton.disabled = false;
 }
 
 function setupEditor(): void {
 	const nextSimulationElement = document.querySelector<HTMLDivElement>('#simulation-pane');
 	const editorElement = document.querySelector<HTMLDivElement>('#script-editor');
 	const nextRunScriptButton = document.querySelector<HTMLButtonElement>('#run-script-button');
+	const nextResetWorldButton = document.querySelector<HTMLButtonElement>('#reset-world-button');
 	const nextScriptStatusElement = document.querySelector<HTMLSpanElement>('#script-status');
 	const nextScriptOutputElement = document.querySelector<HTMLPreElement>('#script-output');
 
-	if (!nextSimulationElement || !editorElement || !nextRunScriptButton || !nextScriptStatusElement || !nextScriptOutputElement) {
+	if (!nextSimulationElement || !editorElement || !nextRunScriptButton || !nextResetWorldButton || !nextScriptStatusElement || !nextScriptOutputElement) {
 		throw new Error('Missing simulator or editor pane');
 	}
 
 	simulationElement = nextSimulationElement;
 	runScriptButton = nextRunScriptButton;
+	resetWorldButton = nextResetWorldButton;
+	resetWorldButton.disabled = true;
 	scriptStatusElement = nextScriptStatusElement;
 	scriptOutputElement = nextScriptOutputElement;
 	scriptEditor = monaco.editor.create(editorElement, {
@@ -407,10 +419,17 @@ function setupEditor(): void {
 	}
 
 	runScriptButton.addEventListener('click', runPythonScript);
+	resetWorldButton.addEventListener('click', resetWorld);
+}
+
+function resetWorld(): void {
+	clearSerialBuffers();
+	setupWorld();
 }
 
 function runPythonScript(): void {
 	runScriptButton.disabled = true;
+	resetWorldButton.disabled = true;
 	scriptStatusElement.textContent = 'Starting...';
 	scriptOutputElement.textContent = '';
 	clearSerialBuffers();
@@ -432,6 +451,7 @@ function handlePythonWorkerMessage(event: MessageEvent<PythonWorkerResponse>): v
 				isPythonWorkerReady = true;
 				configurePythonSerialInput();
 				runScriptButton.disabled = false;
+				resetWorldButton.disabled = false;
 			}
 
 			scriptStatusElement.textContent = response.message;
@@ -442,11 +462,13 @@ function handlePythonWorkerMessage(event: MessageEvent<PythonWorkerResponse>): v
 			break;
 		case 'done':
 			runScriptButton.disabled = false;
+			resetWorldButton.disabled = false;
 			scriptStatusElement.textContent = 'Finished';
 			clearSerialBuffers();
 			break;
 		case 'error':
 			runScriptButton.disabled = false;
+			resetWorldButton.disabled = false;
 			scriptStatusElement.textContent = 'Error';
 			clearSerialBuffers();
 			appendScriptOutput(response.error, 'stderr');
@@ -478,6 +500,7 @@ function configurePythonSerialInput(): void {
 		} satisfies PythonWorkerRequest);
 	} catch (error: unknown) {
 		runScriptButton.disabled = true;
+		resetWorldButton.disabled = true;
 		scriptStatusElement.textContent = 'Serial setup error';
 		appendScriptOutput(error instanceof Error ? error.message : String(error), 'stderr');
 	}
@@ -485,6 +508,7 @@ function configurePythonSerialInput(): void {
 
 function handlePythonWorkerError(event: ErrorEvent): void {
 	runScriptButton.disabled = false;
+	resetWorldButton.disabled = false;
 	scriptStatusElement.textContent = 'Worker error';
 	clearSerialBuffers();
 	appendScriptOutput(`Worker error: ${formatWorkerError(event)}`, 'stderr');
@@ -492,6 +516,7 @@ function handlePythonWorkerError(event: ErrorEvent): void {
 
 function handlePythonWorkerMessageError(): void {
 	runScriptButton.disabled = false;
+	resetWorldButton.disabled = false;
 	scriptStatusElement.textContent = 'Worker message error';
 	clearSerialBuffers();
 	appendScriptOutput('Worker message error: failed to deserialize a worker message.', 'stderr');
