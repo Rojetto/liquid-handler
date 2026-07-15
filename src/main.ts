@@ -8,6 +8,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { PythonWorkerRequest, PythonWorkerResponse } from './pythonWorkerMessages';
 import PythonRuntimeWorker from './pythonRuntime.worker?worker';
+import defaultScript from './defaultScript.py?raw';
 import { SharedSerialPipe } from './sharedSerialPipe';
 
 type MonacoEnvironment = {
@@ -377,19 +378,7 @@ function setupEditor(): void {
 	scriptStatusElement = nextScriptStatusElement;
 	scriptOutputElement = nextScriptOutputElement;
 	scriptEditor = monaco.editor.create(editorElement, {
-		value: [
-			'import io',
-			'import time',
-			'',
-			'serial = io.BufferedWriter(SerialStream())',
-			'',
-			'for x in range(12*2+1):',
-    		'	y = (x % 2) * 9',
-    		'	cmd = f"move {x} {y}\\n"',
-    		'	serial.write(cmd.encode())',
-			'	serial.flush()',
-    		'	time.sleep(1)'
-		].join('\n'),
+		value: defaultScript,
 		language: 'python',
 		theme: 'vs-dark',
 		automaticLayout: true,
