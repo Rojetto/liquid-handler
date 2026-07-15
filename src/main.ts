@@ -273,7 +273,7 @@ async function setup(): Promise<void> {
 	scene.background = new THREE.Color("#2b2b2b");
 
 	camera = new THREE.PerspectiveCamera(55, 1, 0.1, 500);
-	camera.position.set(12, 30, -8);
+	camera.position.set(12, 25, 15);
 
 	renderer = new THREE.WebGLRenderer({ antialias: true });
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
