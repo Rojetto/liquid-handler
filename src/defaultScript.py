@@ -31,6 +31,16 @@ def cmd_pick_up_tips():
 		if len(split) != 3 or split[0] != "pick_up_tip" or split[2] != "complete":
 			raise HandlerError("Pick up tip failed: " + resp)
 
+def cmd_eject_tips():
+	for i in range(CHANNELS):
+		serial.write(f"eject_tip {i}\n")
+
+	for i in range(CHANNELS):
+		resp = serial.readline().strip()
+		split = resp.split()
+		if len(split) != 3 or split[0] != "eject_tip" or split[2] != "complete":
+			raise HandlerError("Eject tip failed: " + resp)
+
 def cmd_aspirate_all(vol):
 	for i in range(CHANNELS):
 		serial.write(f"aspirate {i} {vol}\n")
@@ -72,6 +82,10 @@ def cmd_dispense_all(vol):
 	return vols
 
 def demo_1_dilution_chain():
+	# Pick up tips
+	cmd_move(26, 0)
+	cmd_pick_up_tips()
+
 	# Aspirate sample
 	cmd_move(0, 0)
 	cmd_aspirate_all(200)
@@ -89,8 +103,16 @@ def demo_1_dilution_chain():
 	for x in range(3, 7):
 		cmd_move(x, 0)
 		cmd_dispense_all(25)
+	
+	# Eject tips
+	cmd_move(26, 9)
+	cmd_eject_tips()
 
 def demo_2_clean_up():
+	# Pick up tips
+	cmd_move(26, 0)
+	cmd_pick_up_tips()
+	
 	cur_well = [13, 0]
 
 	for dirty_col in range(12):
@@ -112,10 +134,10 @@ def demo_2_clean_up():
 						cur_well[1] = 0
 			else:
 				channel = channel + 1
-
-# Pick up tips
-cmd_move(26, 0)
-cmd_pick_up_tips()
+	
+	# Eject tips
+	cmd_move(26, 9)
+	cmd_eject_tips()
 
 demo_1_dilution_chain()
 demo_2_clean_up()

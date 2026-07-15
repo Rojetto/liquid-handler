@@ -420,6 +420,11 @@ function setupWorld(): void {
 		scene.add(t3Reservoir);
 	}
 
+	// Empty tip bin
+	const t3TipBin = reservoirTemplate.clone();
+	t3TipBin.position.copy(worldToScene(26, 9, 0));
+	scene.add(t3TipBin);
+
 	resetWorldButton.disabled = false;
 }
 
@@ -874,6 +879,11 @@ function processCommand(split: string[]): void {
 			return;
 		}
 
+		if (pipette.tipAttached) {
+			writeSerialStr("pick_up_tip error tip_attached");
+			return;
+		}
+
 		const tipDispenser = getTipDispenserAt(pipetteHead.x, pipetteHead.y + pipetteIndex);
 		if (!tipDispenser) {
 			writeSerialStr("pick_up_tip error no_dispenser");
@@ -884,6 +894,31 @@ function processCommand(split: string[]): void {
 		pipette.fromZ = pipette.z;
 		pipette.toZ = PIPETTE_PICK_TIP_Z;
 		pipette.moveStart = t;
+	} else if (cmd == "eject_tip") {
+		if (split.length != 2) {
+			writeSerialStr("command error arguments");
+			return;
+		}
+
+		const pipetteIndex = Number(split[1]);
+
+		if (
+			!Number.isInteger(pipetteIndex) ||
+			pipetteIndex < 0 ||
+			pipetteIndex >= pipetteHead.pipettes.length
+		) {
+			writeSerialStr("command error arguments");
+			return;
+		}
+
+		const pipette = pipetteHead.pipettes[pipetteIndex];
+		if (!pipette.tipAttached) {
+			writeSerialStr("eject_tip error no_tip");
+			return;
+		}
+
+		pipette.tipAttached = false;
+		writeSerialStr("eject_tip " + pipetteIndex + " complete");
 	} else if (cmd == "get") {
 		if (split.length != 2) {
 			writeSerialStr("command error arguments");

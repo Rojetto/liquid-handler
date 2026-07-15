@@ -48,7 +48,8 @@ Commands are split on spaces. Blank lines are ignored. Unknown commands currentl
 | Command | Meaning | Success response |
 | --- | --- | --- |
 | `move <x> <y>` | Move the 8-channel head so channel 0 is over `(x, y)`. `x` and `y` may be numeric values. | `move complete` |
-| `pick_up_tip <channel>` | Pick up a tip with one channel. `channel` must be `0`-`7`, the channel must be over a tip dispenser, and the pipette must be idle. | `pick_up_tip <channel> complete` |
+| `pick_up_tip <channel>` | Pick up a tip with one channel. `channel` must be `0`-`7`, the channel must be over a tip dispenser, the pipette must be idle, and no tip may already be attached. | `pick_up_tip <channel> complete` |
+| `eject_tip <channel>` | Eject the attached tip from one channel. `channel` must be `0`-`7`, and the channel must have an attached tip. | `eject_tip <channel> complete` |
 | `aspirate <channel> <volumeUl>` | Aspirate from the well under one channel. `channel` must be `0`-`7`, `volumeUl` must be an integer from `0` to `200`, and the channel must have an attached tip. | `aspirate <channel> <actualVolumeUl>` |
 | `dispense <channel> <volumeUl>` | Dispense into the well under one channel. `channel` must be `0`-`7`, `volumeUl` must be an integer from `0` to `200`, and the channel must have an attached tip. | `dispense <channel> <actualVolumeUl>` |
 | `get position` | Read the current head position. | `get <x> <y>` |
@@ -64,7 +65,9 @@ Commands are split on spaces. Blank lines are ignored. Unknown commands currentl
 | `move error pipette_in_progress` | A `move` command was sent while any channel was aspirating or dispensing. |
 | `pick_up_tip error move_in_progress` | A pick-up command was sent while the head was moving. |
 | `pick_up_tip error pipette_in_progress` | The requested channel was already busy. |
+| `pick_up_tip error tip_attached` | The requested channel already has an attached tip. |
 | `pick_up_tip error no_dispenser` | The requested channel is not positioned over a tip dispenser. |
+| `eject_tip error no_tip` | The requested channel does not have an attached tip. |
 | `aspirate error move_in_progress` | An aspirate command was sent while the head was moving. |
 | `aspirate error pipette_in_progress` | The requested channel was already busy. |
 | `aspirate error no_tip` | The requested channel does not have an attached tip. |
