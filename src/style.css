@@ -64,6 +64,12 @@ body {
   line-height: 1.25;
 }
 
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .icon-button {
   display: inline-grid;
   place-items: center;
@@ -78,6 +84,7 @@ body {
   font-size: 16px;
   font-weight: 750;
   line-height: 1;
+  text-decoration: none;
   cursor: pointer;
 }
 
