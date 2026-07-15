@@ -9,6 +9,7 @@
     "preview": "vite preview --host 0.0.0.0 --port 4173"
   },
   "dependencies": {
+    "marked": "14.0.0",
     "monaco-editor": "^0.55.1",
     "pyodide": "^314.0.2",
     "three": "^0.180.0"

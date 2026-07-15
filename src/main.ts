@@ -1,5 +1,6 @@
 import './style.css';
 
+import { marked } from 'marked';
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api.js';
 import 'monaco-editor/esm/vs/basic-languages/python/python.contribution.js';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker.js?worker';
@@ -9,6 +10,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { PythonWorkerRequest, PythonWorkerResponse } from './pythonWorkerMessages';
 import PythonRuntimeWorker from './pythonRuntime.worker?worker';
 import defaultScript from './defaultScript.py?raw';
+import readmeMarkdown from '../README.md?raw';
 import { SharedSerialPipe } from './sharedSerialPipe';
 
 type MonacoEnvironment = {
@@ -207,6 +209,10 @@ let runScriptButton: HTMLButtonElement;
 let resetWorldButton: HTMLButtonElement;
 let scriptStatusElement: HTMLSpanElement;
 let scriptOutputElement: HTMLPreElement;
+let readmeHelpButton: HTMLButtonElement;
+let readmeCloseButton: HTMLButtonElement;
+let readmeModal: HTMLDivElement;
+let readmeContentElement: HTMLDivElement;
 
 let pythonWorker: Worker;
 let py2JsBuffer: RingBuffer;
@@ -378,8 +384,23 @@ function setupEditor(): void {
 	const nextResetWorldButton = document.querySelector<HTMLButtonElement>('#reset-world-button');
 	const nextScriptStatusElement = document.querySelector<HTMLSpanElement>('#script-status');
 	const nextScriptOutputElement = document.querySelector<HTMLPreElement>('#script-output');
+	const nextReadmeHelpButton = document.querySelector<HTMLButtonElement>('#readme-help-button');
+	const nextReadmeCloseButton = document.querySelector<HTMLButtonElement>('#readme-close-button');
+	const nextReadmeModal = document.querySelector<HTMLDivElement>('#readme-modal');
+	const nextReadmeContentElement = document.querySelector<HTMLDivElement>('#readme-content');
 
-	if (!nextSimulationElement || !editorElement || !nextRunScriptButton || !nextResetWorldButton || !nextScriptStatusElement || !nextScriptOutputElement) {
+	if (
+		!nextSimulationElement ||
+		!editorElement ||
+		!nextRunScriptButton ||
+		!nextResetWorldButton ||
+		!nextScriptStatusElement ||
+		!nextScriptOutputElement ||
+		!nextReadmeHelpButton ||
+		!nextReadmeCloseButton ||
+		!nextReadmeModal ||
+		!nextReadmeContentElement
+	) {
 		throw new Error('Missing simulator or editor pane');
 	}
 
@@ -389,6 +410,12 @@ function setupEditor(): void {
 	resetWorldButton.disabled = true;
 	scriptStatusElement = nextScriptStatusElement;
 	scriptOutputElement = nextScriptOutputElement;
+	readmeHelpButton = nextReadmeHelpButton;
+	readmeCloseButton = nextReadmeCloseButton;
+	readmeModal = nextReadmeModal;
+	readmeContentElement = nextReadmeContentElement;
+	setupReadmeModal();
+
 	scriptEditor = monaco.editor.create(editorElement, {
 		value: defaultScript,
 		language: 'python',
@@ -421,6 +448,33 @@ function setupEditor(): void {
 
 	runScriptButton.addEventListener('click', runPythonScript);
 	resetWorldButton.addEventListener('click', resetWorld);
+}
+
+function setupReadmeModal(): void {
+	const renderedReadme = marked.parse(readmeMarkdown, { async: false });
+
+	if (typeof renderedReadme !== 'string') {
+		throw new Error('README rendering unexpectedly returned a promise');
+	}
+
+	readmeContentElement.innerHTML = renderedReadme;
+	readmeHelpButton.addEventListener('click', openReadmeModal);
+	readmeCloseButton.addEventListener('click', closeReadmeModal);
+	readmeModal.addEventListener('click', (event: MouseEvent) => {
+		if (event.target === readmeModal) {
+			closeReadmeModal();
+		}
+	});
+}
+
+function openReadmeModal(): void {
+	readmeModal.hidden = false;
+	readmeCloseButton.focus();
+}
+
+function closeReadmeModal(): void {
+	readmeModal.hidden = true;
+	readmeHelpButton.focus();
 }
 
 function resetWorld(): void {

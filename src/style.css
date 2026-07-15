@@ -64,6 +64,34 @@ body {
   line-height: 1.25;
 }
 
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 1px solid #3a4352;
+  border-radius: 50%;
+  color: #dce4ef;
+  background: #252c37;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 750;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  color: #071210;
+  background: #8ad3c7;
+  border-color: #8ad3c7;
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid #8ad3c7;
+  outline-offset: 2px;
+}
+
 .eyebrow {
   margin-bottom: 4px;
   color: #8ad3c7;
@@ -143,4 +171,147 @@ canvas {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.readme-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgb(8 10 14 / 72%);
+}
+
+.readme-overlay[hidden] {
+  display: none;
+}
+
+.readme-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(880px, 100%);
+  max-height: min(760px, calc(100vh - 56px));
+  overflow: hidden;
+  color: #e8edf5;
+  background: #151922;
+  border: 1px solid #3a4352;
+  border-radius: 8px;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 45%);
+}
+
+.readme-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  padding: 12px 16px;
+  background: #1b202a;
+  border-bottom: 1px solid #2a303d;
+}
+
+.readme-dialog-header h2 {
+  margin: 0;
+  color: #f7f8fb;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.readme-content {
+  min-height: 0;
+  padding: 20px 24px 28px;
+  overflow: auto;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.readme-content > :first-child {
+  margin-top: 0;
+}
+
+.readme-content > :last-child {
+  margin-bottom: 0;
+}
+
+.readme-content h1,
+.readme-content h2,
+.readme-content h3 {
+  margin: 1.45em 0 0.55em;
+  color: #f7f8fb;
+  line-height: 1.25;
+}
+
+.readme-content h1 {
+  font-size: 24px;
+}
+
+.readme-content h2 {
+  font-size: 18px;
+}
+
+.readme-content h3 {
+  font-size: 15px;
+}
+
+.readme-content p,
+.readme-content ul,
+.readme-content ol,
+.readme-content pre,
+.readme-content table {
+  margin: 0 0 14px;
+}
+
+.readme-content ul,
+.readme-content ol {
+  padding-left: 22px;
+}
+
+.readme-content code {
+  padding: 2px 5px;
+  color: #d9f8f3;
+  background: #222936;
+  border-radius: 4px;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+
+.readme-content pre {
+  overflow: auto;
+  padding: 12px;
+  background: #10141c;
+  border: 1px solid #2a303d;
+  border-radius: 6px;
+}
+
+.readme-content pre code {
+  display: block;
+  padding: 0;
+  color: #dce4ef;
+  background: transparent;
+  border-radius: 0;
+}
+
+.readme-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.readme-content th,
+.readme-content td {
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  border: 1px solid #303746;
+}
+
+.readme-content th {
+  color: #f7f8fb;
+  background: #222936;
+}
+
+.readme-content td {
+  color: #dce4ef;
 }
