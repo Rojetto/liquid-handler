@@ -8,17 +8,6 @@ A browser-based simulator for high-level liquid handling workflows. It pairs a r
 - 8-channel pipette head with animated X/Y movement and per-channel Z motion.
 - Four 96-well plate positions arranged as a 2 by 2 deck.
 
-## Use
-
-Install and run:
-
-```bash
-npm install
-npm run dev
-```
-
-Open the Vite URL, edit the Python script, click **Run**, and inspect the 3D simulation. Use **Reset** to rebuild the deck state.
-
 ## Serial Protocol
 
 Python scripts communicate with the simulator by writing newline-terminated text commands to `SerialStream` and reading newline-terminated text responses back.
@@ -77,13 +66,16 @@ Commands are split on spaces. Blank lines are ignored. Unknown commands currentl
 | `dispense error pipette_in_progress` | The requested channel was already busy. |
 | `dispense error no_well` | The requested channel is not positioned over a well. |
 
-## Tech Stack
+## Use
 
-- TypeScript
-- Vite
-- three.js
-- Monaco Editor
-- Pyodide
+Install and run:
+
+```bash
+npm install
+npm run dev
+```
+
+Open the Vite URL, edit the Python script, click **Run**, and inspect the 3D simulation. Use **Reset** to rebuild the deck state.
 
 ## Build
 
@@ -92,3 +84,11 @@ npm run build
 ```
 
 The built app is static, but it must be served with cross-origin isolation headers so `SharedArrayBuffer` is available. The included Vite dev and preview configs set these headers.
+
+## Tech Stack
+
+- TypeScript
+- Vite
+- three.js
+- Monaco Editor
+- Pyodide
